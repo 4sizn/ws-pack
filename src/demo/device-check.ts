@@ -154,6 +154,30 @@ function render(): void {
   `;
 }
 
+/** 결과를 개발 머신으로 되보낸다. 폰 화면을 볼 수 없는 쪽에서도 확인할 수 있어야 한다. */
+async function report(): Promise<void> {
+  const summary = {
+    userAgent: navigator.userAgent,
+    host,
+    secureContext: window.isSecureContext,
+    sharedWorker: typeof SharedWorker !== "undefined",
+    worker: typeof Worker !== "undefined",
+    randomUUID: typeof crypto?.randomUUID === "function",
+    passed: results.filter((outcome) => outcome.status === "통과").length,
+    total: results.length,
+    results,
+  };
+  try {
+    await fetch("/device-report", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(summary, null, 2),
+    });
+  } catch {
+    // 수집기가 없어도 화면 결과는 그대로 남는다
+  }
+}
+
 async function run(): Promise<void> {
   render();
   for (const protocol of protocols) {
@@ -162,6 +186,7 @@ async function run(): Promise<void> {
       render();
     }
   }
+  await report();
 }
 
 void run();
