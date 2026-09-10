@@ -27,7 +27,7 @@ jobs:
 
       # 계약 테스트는 자체 브로커를 띄운다. 외부 서비스나 도커가 필요 없다.
       - name: Test
-        run: bun test
+        run: bun run test
 
       # 소비자가 실제로 받는 산출물이 만들어지는지까지 본다.
       - name: Build library
@@ -36,3 +36,32 @@ jobs:
       # 진입점 설정이 틀리면 설치한 쪽에서만 깨진다. 여기서 잡는다.
       - name: Check package entry points
         run: bun run check:dist
+
+  # 브라우저에서만 성립하는 것들 — 화면 렌더, 진짜 Worker/SharedWorker, 소켓 왕복.
+  # 브라우저를 받아야 해서 빠른 검사와 분리해 병렬로 돌린다.
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      - name: Install browser
+        run: bunx playwright install --with-deps chromium
+
+      # STOMP 는 도커 브로커가 필요해 여기서 빼고, 순수 WebSocket 과 MQTT 서버는
+      # playwright 설정이 직접 띄운다.
+      - name: E2E
+        run: bun run e2e
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-trace
+          path: test-results/
+          retention-days: 7

@@ -4,3 +4,5 @@ dist
 *.local
 tsconfig.tsbuildinfo
 .proof/
+test-results
+playwright-report
