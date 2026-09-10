@@ -1,3 +1,4 @@
+import type { SocketCloseInfo } from "../CloseInfo";
 import type { AbstractPlugin, Logger } from "../plugins/AbstractPlugin";
 import type { ReconnectConfig } from "../Reconnect";
 import { WebSocketClientAdapter } from "./WebSocketClientAdapter";
@@ -28,7 +29,7 @@ export class WindowWebSocketClientAdapter extends WebSocketClientAdapter<
     super();
   }
 
-  public connect(_config?: WindowWebSocketClientOptions): Promise<void> {
+  public connect(_signal: AbortSignal, _config?: WindowWebSocketClientOptions): Promise<void> {
     throw new Error("Method not implemented.");
   }
   public disconnect(): Promise<void> {
@@ -43,7 +44,7 @@ export class WindowWebSocketClientAdapter extends WebSocketClientAdapter<
   public onError(_callback: (error: Error) => void): void {
     throw new Error("Method not implemented.");
   }
-  public onClose(_callback: () => void): void {
+  public onClose(_callback: (info: SocketCloseInfo) => void): void {
     throw new Error("Method not implemented.");
   }
   public onConnect(_callback: () => void): void {

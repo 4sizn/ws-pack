@@ -1,3 +1,4 @@
+export type { DisconnectInfo, SocketCloseInfo } from "./core/CloseInfo";
 export { ConnectionState } from "./core/ConnectionState";
 export { StompStompError } from "./core/errors/StompStompError";
 export { StompWebsocketError } from "./core/errors/StompWebsocketError";

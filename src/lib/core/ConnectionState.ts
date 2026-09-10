@@ -14,9 +14,14 @@ export enum ConnectionState {
   CONNECTING = "CONNECTING",
   /** 연결됨, 송수신 가능 */
   OPEN = "OPEN",
-  /** 연결이 끊겨 재연결 시도 중 (아직 미구현, 재연결 로직 붙을 때 사용) */
+  /** 연결이 끊겨 재연결 시도 중 */
   RECONNECTING = "RECONNECTING",
-  /** 연결 종료 처리 중 (아직 미구현) */
+  /**
+   * 연결 종료 처리 중.
+   *
+   * Controller 는 이 상태를 쓰지 않는다 — 종료는 로컬 결정이라 disconnect() 즉시 IDLE 로 간다.
+   * 브로커 응답을 기다리는 중간 상태를 두면, 응답이 오지 않을 때 그 상태에 갇힌다.
+   */
   CLOSING = "CLOSING",
   /** 연결이 예기치 않게 끊겨 재시도도 실패한 최종 상태 (아직 미구현) */
   CLOSED = "CLOSED",

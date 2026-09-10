@@ -1,0 +1,14 @@
+#!/bin/sh
+# Pre-commit gate: type check, then the protocol-agnostic chat contract tests.
+# Enable once per clone:  git config core.hooksPath .githooks
+# Skip for a single commit (use sparingly):  git commit --no-verify
+
+set -e
+
+echo "pre-commit: tsc -b"
+bunx tsc -b
+
+echo "pre-commit: bun test"
+bun test
+
+echo "pre-commit: ok"
