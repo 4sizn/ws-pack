@@ -44,11 +44,21 @@
 /* ── 헤더 ──────────────────────────────────────────── */
 .chat-header {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 8px;
   padding: 12px 14px;
   background: var(--header-bg);
   border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.chat-header__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.chat-header__row--sub {
+  gap: 6px;
 }
 
 .chat-header__title {
@@ -70,6 +80,33 @@
   color: var(--text-muted);
 }
 
+.chat-header__destination {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 6px;
+  padding: 4px 7px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  background: #fff;
+  color: #3a4a5a;
+}
+
+.chat-header__action {
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 6px;
+  padding: 4px 9px;
+  font-size: 12px;
+  background: #fff;
+  color: #3a4a5a;
+}
+
+.chat-header__action:disabled {
+  color: #b3bac4;
+  background: #f1f3f6;
+  cursor: default;
+}
+
 .status-dot {
   width: 8px;
   height: 8px;
@@ -77,23 +114,71 @@
   background: var(--text-muted);
 }
 
-.status-dot--connected {
+.status-dot--open {
   background: #2bb673;
 }
 
-.status-dot--connecting {
+.status-dot--connecting,
+.status-dot--reconnecting {
   background: #f5a623;
   animation: pulse 1.2s ease-in-out infinite;
 }
 
-.status-dot--disconnected {
+.status-dot--closed {
   background: #e05260;
+}
+
+.status-dot--closing {
+  background: #e0a15e;
+}
+
+.status-dot--idle {
+  background: #a5adba;
 }
 
 @keyframes pulse {
   50% {
     opacity: 0.3;
   }
+}
+
+/* 토픽 전환 컨트롤 (분리 토픽 / 동일 토픽 검증) */
+.topic-switch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+
+.topic-switch__button {
+  border: 1px solid rgba(0, 0, 0, 0.14);
+  border-radius: 999px;
+  padding: 5px 12px;
+  font-size: 12px;
+  background: #fff;
+  color: #3a4a5a;
+}
+
+.topic-switch__button--active {
+  background: var(--kakao-yellow);
+  border-color: transparent;
+  color: #3c1e1e;
+  font-weight: 700;
+}
+
+.topic-switch__hint {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* 전송/연결 에러 한 줄 표시 */
+.chat-room__error {
+  padding: 6px 12px;
+  background: #fdecee;
+  color: #b03040;
+  font-size: 12px;
+  border-top: 1px solid rgba(0, 0, 0, 0.05);
 }
 
 /* ── 메시지 목록 ───────────────────────────────────── */
