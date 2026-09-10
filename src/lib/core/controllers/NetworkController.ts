@@ -22,6 +22,13 @@ import {
 } from "rxjs";
 import { AbstractController } from "../abstract/AbstractController";
 import {
+  type MqttMessage,
+  type MqttSendOptions,
+  type MqttSubscribeOptions,
+  MqttWebSocketClientAdapter,
+  type MqttWebSocketClientOptions,
+} from "../adapters/MqttWebSocketClientAdapter";
+import {
   type StompSendOptions,
   StompWebSocketClientAdapter,
   type StompWebSocketClientOptions,
@@ -504,15 +511,28 @@ export class StompWebSocketController
   }
 }
 
-export class MqttWebSocketController extends WebSocketController<string> {
+export class MqttWebSocketController
+  extends WebSocketController<MqttMessage, MqttSendOptions, MqttWebSocketClientAdapter>
+  implements PubSubAble<MqttMessage, MqttSubscribeOptions>
+{
   public readonly name = "MqttWebSocketController";
 
-  // TODO: MqttWebSocketClientAdapter 구현되면 options 타입 정의 + createAdapter 연결
-  constructor(_options: unknown) {
-    super();
+  constructor(private readonly options: MqttWebSocketClientOptions) {
+    super(options.reconnect);
+    for (const plugin of options.plugins ?? []) {
+      this.addPlugin(plugin);
+    }
   }
 
-  protected createAdapter(): IWebSocketClientAdapter<undefined, string> {
-    throw new Error("Method not implemented.");
+  protected createAdapter(): MqttWebSocketClientAdapter {
+    return new MqttWebSocketClientAdapter(this.options);
+  }
+
+  /**
+   * topic 필터 구독. connect() 전에 불러도 되고(연결되면 걸림), 재연결되면 자동으로 다시 걸린다.
+   * 반환 Observable 을 unsubscribe 하면 브로커 구독도 해제된다.
+   */
+  public subscribe(filter: string, options?: MqttSubscribeOptions): Observable<MqttMessage> {
+    return this.ensureAdapter().subscribe(filter, options);
   }
 }

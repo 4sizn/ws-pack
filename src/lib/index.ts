@@ -1,5 +1,6 @@
 export type { DisconnectInfo, SocketCloseInfo } from "./core/CloseInfo";
 export { ConnectionState } from "./core/ConnectionState";
+export { MqttWebsocketError } from "./core/errors/MqttWebsocketError";
 export { StompStompError } from "./core/errors/StompStompError";
 export { StompWebsocketError } from "./core/errors/StompWebsocketError";
 export { WindowWebsocketError } from "./core/errors/WindowWebsocketError";
@@ -13,6 +14,10 @@ export {
 export type { ReconnectConfig, ReconnectInfo } from "./core/Reconnect";
 export { ReconnectTimeMode } from "./core/Reconnect";
 export type {
+  MqttMessage,
+  MqttSendOptions,
+  MqttSubscribeOptions,
+  MqttWebSocketClientOptions,
   StompSendOptions,
   StompWebSocketClientOptions,
   WindowWebSocketClientOptions,

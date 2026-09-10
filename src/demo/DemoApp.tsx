@@ -18,11 +18,13 @@ const shared: Rooms = Object.fromEntries(mockRooms.map((room) => [room.id, SHARE
 const protocolLabel: Record<Protocol, string> = {
   stomp: "STOMP",
   window: "WebSocket",
+  mqtt: "MQTT",
 };
 
 const protocolHint: Record<Protocol, string> = {
   stomp: "RabbitMQ web-stomp (ws://127.0.0.1:15674/ws) — bun run stomp:up",
   window: "순수 WebSocket 에코 서버 (ws://127.0.0.1:8010) — bun run ws:server",
+  mqtt: "aedes MQTT 브로커 (ws://127.0.0.1:8011) — bun run mqtt:server",
 };
 
 /**
@@ -48,7 +50,7 @@ export function DemoApp() {
         </p>
 
         <div className="topic-switch">
-          {(["stomp", "window"] as const).map((value) => (
+          {(["stomp", "window", "mqtt"] as const).map((value) => (
             <button
               key={value}
               type="button"
