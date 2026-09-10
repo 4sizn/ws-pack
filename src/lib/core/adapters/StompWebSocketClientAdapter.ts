@@ -9,6 +9,8 @@ import {
   type StompSubscription,
 } from "@stomp/stompjs";
 import { Observable, type Subscriber } from "rxjs";
+import { onAbort } from "../abort";
+import type { SocketCloseInfo } from "../CloseInfo";
 import { StompStompError } from "../errors/StompStompError";
 import { StompWebsocketError } from "../errors/StompWebsocketError";
 import type { PubSubAble } from "../PubSubAble";
@@ -56,8 +58,12 @@ interface SubscriptionRecord {
 /**
  * @stomp/stompjs 를 감싸는 어댑터. stompjs 타입이 등장하는 유일한 어댑터 파일.
  *
- * connect() 는 "한 번" 시도한다: CONNECTED 프레임이면 resolve, 그 전에 STOMP ERROR /
+ * connect(signal) 은 "한 번" 시도한다: CONNECTED 프레임이면 resolve, 그 전에 STOMP ERROR /
  * WebSocket error / close 가 오면 reject. 재시도는 Controller가 한다.
+ *
+ * 이 연결의 수명은 `signal` 이 정한다. abort 되면 — 시도 중이든 이미 연결됐든 — 소켓을 놓는다.
+ * 세대 카운터나 "종료 요청됨" 플래그를 따로 두지 않는 이유: 취소 여부를 판단하는 지점이
+ * 여러 개가 되는 순간 어긋나고, 어긋나면 주인 없는 소켓이 남는다.
  *
  * subscribe(destination) 로 만든 구독은 어댑터가 기억해서, 재연결 후 CONNECTED 가 오면 자동으로 다시 건다.
  */
@@ -75,22 +81,16 @@ export class StompWebSocketClientAdapter
   readonly #connectCallbacks = new Set<() => void>();
   readonly #messageCallbacks = new Set<(message: IMessage) => void>();
   readonly #errorCallbacks = new Set<(error: Error) => void>();
-  readonly #closeCallbacks = new Set<() => void>();
+  readonly #closeCallbacks = new Set<(info: SocketCloseInfo) => void>();
 
   readonly #subscriptions = new Set<SubscriptionRecord>();
-
-  /**
-   * connect() 호출마다 1 증가. 콜백은 자기 세대가 현재 세대일 때만 동작한다 —
-   * 이전 시도의 stompjs Client 가 늦게 쏘는 error/close 가 새 시도에 섞이는 걸 막는다.
-   */
-  #generation = 0;
 
   constructor(options: StompWebSocketClientOptions) {
     super();
     this.#options = options;
   }
 
-  public async connect(): Promise<void> {
+  public async connect(signal: AbortSignal): Promise<void> {
     const {
       client,
       reconnect: _reconnect,
@@ -106,13 +106,8 @@ export class StompWebSocketClientAdapter
       );
     }
 
-    // 이전 클라이언트가 살아 있으면 먼저 정리 (연결 누수 방지)
-    if (this.client?.active) {
-      await this.client.deactivate();
-    }
-
-    const generation = ++this.#generation;
-    const isCurrent = () => generation === this.#generation;
+    // 이전 시도가 남긴 소켓을 먼저 놓는다 (연결 누수 방지).
+    await this.disconnect();
 
     return new Promise<void>((resolve, reject) => {
       let settled = false;
@@ -122,13 +117,16 @@ export class StompWebSocketClientAdapter
         fn();
       };
 
+      // 취소된 시도의 콜백은 흘리지 않는다. 판단 기준은 신호 하나뿐이다.
+      const live = () => !signal.aborted;
+
       const config: StompConfig = {
         ...stompConfig,
         // stompjs 자체 재연결 비활성화 — Controller가 ReconnectConfig 로 재시도한다.
         reconnectDelay: 0,
 
         onConnect: (_frame: IFrame) => {
-          if (!isCurrent()) return;
+          if (!live()) return;
           // 재연결이면 살아 있는 구독을 새 세션에 다시 건다
           for (const record of this.#subscriptions) {
             this.#attach(record);
@@ -138,22 +136,22 @@ export class StompWebSocketClientAdapter
         },
 
         onStompError: (frame: IFrame) => {
-          if (!isCurrent()) return;
+          if (!live()) return;
           const error = new StompStompError(frame.headers.message ?? "STOMP ERROR frame", frame);
           for (const cb of this.#errorCallbacks) cb(error);
           settle(() => reject(error));
         },
 
         onWebSocketError: (event: Event) => {
-          if (!isCurrent()) return;
+          if (!live()) return;
           const error = new StompWebsocketError("WebSocket error", event);
           for (const cb of this.#errorCallbacks) cb(error);
           settle(() => reject(error));
         },
 
-        // 소켓이 닫히는 모든 경우에 한 번 온다 (deactivate 포함). 수동/비수동 판단은 Controller 상태로.
+        // 소켓이 닫히는 모든 경우에 한 번 온다. 수동/비수동 판단은 Controller 상태로.
         onWebSocketClose: (event: CloseEvent) => {
-          if (!isCurrent()) return;
+          if (!live()) return;
           settle(() =>
             reject(
               new Error(
@@ -161,35 +159,71 @@ export class StompWebSocketClientAdapter
               ),
             ),
           );
-          for (const cb of this.#closeCallbacks) cb();
+          const info: SocketCloseInfo = {
+            code: event.code,
+            reason: event.reason,
+            wasClean: event.wasClean,
+          };
+          for (const cb of this.#closeCallbacks) cb(info);
         },
 
         // 구독 없이 도착한 메시지도 message$ 로 흘린다
         onUnhandledMessage: (message: IMessage) => {
-          if (!isCurrent()) return;
+          if (!live()) return;
           for (const cb of this.#messageCallbacks) cb(message);
         },
       };
 
       // 주입된 client 가 있으면 그걸 쓰고 설정만 덮어쓴다. 없으면 새로 만든다.
-      if (client) {
-        client.configure(config);
-        this.client = client;
-      } else {
-        this.client = new StompClient(config);
-      }
+      const stomp = client ?? new StompClient();
+      stomp.configure(config);
+      this.client = stomp;
+
+      // 연결의 수명 = signal 의 수명. 이미 취소됐다면 activate 자체를 하지 않는다.
+      onAbort(signal, () => {
+        settle(() => reject(abortReason(signal)));
+        void this.#release(stomp);
+      });
+      if (signal.aborted) return;
 
       try {
-        this.client.activate();
+        stomp.activate();
       } catch (error) {
         settle(() => reject(error));
       }
     });
   }
 
+  /**
+   * 연결 종료. 소유권을 먼저 놓고, 소켓 정리는 로컬에서 끝낸다. 이미 놓았으면 아무 일도 하지 않는다.
+   */
   public async disconnect(): Promise<void> {
-    if (!this.client) return;
-    await this.client.deactivate();
+    const client = this.client;
+    this.client = undefined;
+    if (!client) return;
+    await this.#release(client);
+  }
+
+  /**
+   * 소켓 반납. 두 단계로 나뉘고 순서가 의미를 가진다.
+   *
+   * 1. 우아한 종료 시도: `deactivate()` 는 DISCONNECT 프레임을 소켓에 쓴다. 그 프레임에 대한
+   *    브로커의 RECEIPT 를 기다리는 Promise 는 **의도적으로 await 하지 않는다.** 네트워크가
+   *    끊긴 상태에서는 응답이 영원히 오지 않고, 기다리면 종료가 끝나지 않는다.
+   * 2. 로컬 폐기: `deactivate({ force: true })` 는 소켓 핸들을 즉시 버린다. 상대와 무관하게
+   *    항상 유한 시간에 끝나므로, 이 단계의 완료를 "끊겼다" 의 기준으로 삼는다.
+   *
+   * `WebSocket.close()` 는 버퍼에 남은 데이터를 먼저 내보내므로, 1번 직후에 폐기해도 프레임은 나간다.
+   */
+  async #release(client: StompClient): Promise<void> {
+    if (this.client === client) {
+      this.client = undefined;
+    }
+    for (const record of this.#subscriptions) {
+      record.stompSubscription = undefined;
+    }
+    void client.deactivate().catch(() => {});
+    await client.deactivate({ force: true });
   }
 
   /**
@@ -253,7 +287,7 @@ export class StompWebSocketClientAdapter
     this.#errorCallbacks.add(callback);
   }
 
-  public onClose(callback: () => void): void {
+  public onClose(callback: (info: SocketCloseInfo) => void): void {
     this.#closeCallbacks.add(callback);
   }
 
@@ -261,4 +295,8 @@ export class StompWebSocketClientAdapter
   public networkStatus(): number {
     return this.client?.webSocket?.readyState ?? StompSocketState.CLOSED;
   }
+}
+
+function abortReason(signal: AbortSignal): Error {
+  return signal.reason instanceof Error ? signal.reason : new Error("connect aborted");
 }

@@ -6,6 +6,7 @@ import type {
 } from "./adapters/StompWebSocketClientAdapter";
 import type { SendArgs } from "./adapters/WebSocketClientAdapter";
 import type { WindowWebSocketClientOptions } from "./adapters/WindowWebSocketClientAdapter";
+import type { DisconnectInfo } from "./CloseInfo";
 import type { ConnectionState } from "./ConnectionState";
 import type { WebSocketController } from "./controllers/NetworkController";
 import {
@@ -63,7 +64,7 @@ export class WebSocketClient<
     return this.controller.connect$;
   }
 
-  public get disconnect$(): Observable<void> {
+  public get disconnect$(): Observable<DisconnectInfo> {
     return this.controller.disconnect$;
   }
 

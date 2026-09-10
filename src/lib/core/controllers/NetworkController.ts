@@ -1,15 +1,23 @@
 import type { IMessage, StompHeaders } from "@stomp/stompjs";
 import {
   BehaviorSubject,
+  catchError,
+  concat,
   defer,
   distinctUntilChanged,
-  EmptyError,
+  EMPTY,
+  finalize,
   firstValueFrom,
   from,
+  ignoreElements,
   type Observable,
+  repeat,
   retry,
   Subject,
-  takeUntil,
+  switchMap,
+  take,
+  tap,
+  throwError,
   timer,
 } from "rxjs";
 import { AbstractController } from "../abstract/AbstractController";
@@ -23,6 +31,7 @@ import {
   WindowWebSocketClientAdapter,
   type WindowWebSocketClientOptions,
 } from "../adapters/WindowWebSocketClientAdapter";
+import type { DisconnectInfo, SocketCloseInfo } from "../CloseInfo";
 import { ConnectionState } from "../ConnectionState";
 import type { PubSubAble } from "../PubSubAble";
 import type { AbstractPlugin } from "../plugins/AbstractPlugin";
@@ -37,12 +46,13 @@ import {
 
 type PluginHook = "onBeforeConnect" | "onAfterConnect" | "onBeforeDisconnect" | "onAfterDisconnect";
 
-/** disconnect() 가 진행 중인 재시도를 끊었을 때 내부적으로 쓰는 신호. 밖으로 안 나간다. */
-class ReconnectAbortedError extends Error {
-  constructor() {
-    super("reconnect aborted by disconnect()");
-    this.name = "ReconnectAbortedError";
-  }
+/**
+ * 연결/종료 "의도". 상태 플래그 대신 의도를 스트림에 실어 한 줄로 세운다.
+ * `done` 은 호출자의 Promise 로 이어지며, 다음 의도에 밀려나면 값 없이 complete 한다(조용히 resolve).
+ */
+interface Intent {
+  kind: "connect" | "disconnect";
+  done: Subject<void>;
 }
 
 function toError(error: unknown): Error {
@@ -52,6 +62,12 @@ function toError(error: unknown): Error {
 /**
  * 구조 관계: Client -> Controller -> Adapter.
  * Controller는 연결 정책(재연결/백오프)과 ConnectionState 를 소유한다. Adapter는 "한 번 연결 시도"만 한다.
+ *
+ * 수명 관리 규칙은 두 개뿐이다.
+ * 1. 의도는 스트림으로 직렬화한다 — `switchMap` 이므로 새 의도가 들어오면 이전 흐름은 구독 해제된다.
+ *    "지금 종료 중인가" 같은 플래그를 따로 들지 않는다.
+ * 2. 연결의 수명은 AbortSignal 하나로 표현한다 — 흐름이 구독 해제되면 finalize 가 abort 하고,
+ *    어댑터는 그 신호만 보고 시도 중이든 연결됐든 소켓을 놓는다. 주인 없는 소켓이 남지 않는다.
  *
  * @template TMessage 이 프로토콜의 메시지 페이로드 타입 (Window: string, Stomp: IMessage 등).
  * @template TSend    send() 두 번째 인자 타입 (Window: 없음, Stomp: StompSendOptions).
@@ -73,11 +89,15 @@ export abstract class WebSocketController<
   // 재연결 정책
   readonly #reconnect: ResolvedReconnectConfig;
   #reconnectAttempts = 0;
-  readonly #stopReconnect$ = new Subject<void>();
+
+  /** 연결/종료 의도. 하나의 스트림으로 직렬화된다. */
+  readonly #intent$ = new Subject<Intent>();
+  /** 어댑터가 알려주는 소켓 종료. 연결 수명 스트림이 이 신호를 보고 다음 시도로 넘어간다. */
+  readonly #socketClosed$ = new Subject<SocketCloseInfo>();
 
   readonly #connectionState$ = new BehaviorSubject<ConnectionState>(ConnectionState.IDLE);
   readonly #connectSubject = new Subject<void>();
-  readonly #disconnectSubject = new Subject<void>();
+  readonly #disconnectSubject = new Subject<DisconnectInfo>();
   readonly #errorSubject = new Subject<Error>();
   readonly #messageSubject = new Subject<TMessage>();
   readonly #reconnectAttemptSubject = new Subject<ReconnectInfo>();
@@ -86,6 +106,8 @@ export abstract class WebSocketController<
   constructor(reconnect?: ReconnectConfig) {
     super();
     this.#reconnect = resolveReconnectConfig(reconnect);
+    // 마지막 의도가 이긴다. 이전 흐름의 정리는 그 흐름의 finalize 가 책임진다.
+    this.#intent$.pipe(switchMap((intent) => this.#run(intent))).subscribe();
   }
 
   // ============================================
@@ -107,8 +129,8 @@ export abstract class WebSocketController<
     return this.#connectSubject.asObservable();
   }
 
-  /** 연결이 끊긴 이벤트 (수동 disconnect + 예기치 않은 끊김 모두) */
-  public get disconnect$(): Observable<void> {
+  /** 연결이 끊긴 이벤트. 수동 종료인지(manual)와 close code/reason 을 함께 준다. */
+  public get disconnect$(): Observable<DisconnectInfo> {
     return this.#disconnectSubject.asObservable();
   }
 
@@ -158,63 +180,27 @@ export abstract class WebSocketController<
   protected abstract createAdapter(): TAdapter;
 
   /**
-   * 연결 시작. IDLE 또는 CLOSED(재시도 소진 후) 에서만 동작하고, 그 외 상태면 무시한다.
-   * 첫 시도 실패 시 ReconnectConfig 대로 재시도하고, 전부 실패하면 CLOSED 로 가며 reject 한다.
-   * 재시도 도중 disconnect() 가 불리면 조용히 resolve 한다 (에러 아님).
+   * 연결 시작. OPEN 에 도달하면 resolve, 재시도까지 모두 실패하면 reject.
+   * 이미 연결 중이거나 연결된 상태면 아무 일도 하지 않는다.
+   * 연결되기 전에 disconnect() 가 끼어들면 조용히 resolve 한다 (에러 아님).
    */
-  public async connect(): Promise<void> {
-    const state = this.connectionState;
-    if (state !== ConnectionState.IDLE && state !== ConnectionState.CLOSED) {
-      return;
-    }
-
-    const adapter = this.ensureAdapter();
-    this.#setState(ConnectionState.CONNECTING);
-
-    // onBeforeConnect 만 연결을 거부(throw)할 수 있다. 거부되면 상태를 되돌리고 그대로 던진다.
-    try {
-      await this.dispatch("onBeforeConnect");
-    } catch (error) {
-      this.#setState(state);
-      throw error;
-    }
-
-    const error = await this.#establish(adapter);
-    if (error) {
-      throw error;
-    }
+  public connect(): Promise<void> {
+    return this.#intend("connect");
   }
 
   /**
-   * 연결 종료. 진행 중인 재시도도 끊는다. IDLE/CLOSED/CLOSING 이면 무시.
+   * 연결 종료. 진행 중인 재시도도 함께 끊긴다.
+   *
+   * onBeforeDisconnect 는 소켓이 아직 열려 있는 동안 부르고, 그 다음에 종료 의도를 발행한다.
+   * 플러그인이 throw 하거나 오래 걸려도 종료 자체는 진행된다.
    */
   public async disconnect(): Promise<void> {
-    const state = this.connectionState;
-    if (
-      state === ConnectionState.IDLE ||
-      state === ConnectionState.CLOSED ||
-      state === ConnectionState.CLOSING
-    ) {
-      return;
-    }
-
-    // 진행 중인 재시도 루프 중단 (CONNECTING/RECONNECTING 이었을 때)
-    this.#stopReconnect$.next();
-
-    const wasOpen = state === ConnectionState.OPEN;
-    this.#setState(ConnectionState.CLOSING);
+    const wasOpen = this.connectionState === ConnectionState.OPEN;
     if (wasOpen) {
-      // 플러그인이 throw 해도 종료는 계속한다 — 상태가 CLOSING 에 갇히면 안 된다
       await this.#dispatchSafe("onBeforeDisconnect");
     }
 
-    try {
-      await this.adapter?.disconnect();
-    } finally {
-      this.#reconnectAttempts = 0;
-      this.#setState(ConnectionState.IDLE);
-      this.#disconnectSubject.next();
-    }
+    await this.#intend("disconnect");
 
     if (wasOpen) {
       await this.#dispatchSafe("onAfterDisconnect");
@@ -248,53 +234,85 @@ export abstract class WebSocketController<
     adapter.onError((error) => {
       void this.#emitError(error);
     });
-    adapter.onClose(() => {
-      void this.#handleUnexpectedClose();
-    });
+    adapter.onClose((info) => this.#socketClosed$.next(info));
     this.adapter = adapter;
     return adapter;
   }
 
-  /**
-   * 재시도 포함 연결 확립. 성공하면 OPEN + connect$ + onAfterConnect 까지 처리하고 undefined 반환.
-   * 재시도 소진이면 CLOSED + maxReconnectReached$ + error$ 처리 후 그 에러를 반환.
-   * disconnect() 로 중단됐으면 상태를 건드리지 않고 undefined 반환 (disconnect() 가 상태를 IDLE 로 마무리한다).
-   */
-  async #establish(adapter: TAdapter): Promise<Error | undefined> {
-    try {
-      await this.#connectWithRetry(adapter);
-    } catch (error) {
-      if (error instanceof ReconnectAbortedError) {
-        return undefined;
-      }
-      // 각 시도의 원인 에러는 어댑터 onError 콜백을 통해 이미 error$ 로 나갔다.
-      // 여기선 "재시도 소진" 이라는 별개 사건을 한 번만 알린다 (같은 에러 중복 emit 방지).
-      const failure = new Error(
-        `Maximum reconnection attempts (${this.#reconnect.maxAttempts}) reached`,
-        { cause: error },
-      );
-      this.#setState(ConnectionState.CLOSED);
-      this.#maxReconnectReachedSubject.next();
-      await this.#emitError(failure);
-      return failure;
-    }
+  /** 의도 하나를 발행하고, 그 결과를 Promise 로 돌려준다. */
+  #intend(kind: Intent["kind"]): Promise<void> {
+    const done = new Subject<void>();
+    // 발행보다 구독이 먼저다. 밀려나서 값 없이 complete 되면 조용히 resolve 된다.
+    const settled = firstValueFrom(done, { defaultValue: undefined });
+    this.#intent$.next({ kind, done });
+    return settled.then(() => undefined);
+  }
 
-    this.#reconnectAttempts = 0;
-    this.#setState(ConnectionState.OPEN);
-    this.#connectSubject.next();
-    // 연결은 이미 성립했다. 플러그인 실패가 연결을 실패로 만들면 안 되므로 error$ 로만 흘린다.
-    await this.#dispatchSafe("onAfterConnect");
-    return undefined;
+  /** 의도 하나의 실행. 목표에 도달한 시점(첫 emit)에 호출자의 Promise 를 풀어준다. */
+  #run(intent: Intent): Observable<never> {
+    const flow = intent.kind === "connect" ? this.#session() : this.#close();
+    return flow.pipe(
+      tap({
+        next: () => intent.done.complete(),
+        error: (error: unknown) => intent.done.error(toError(error)),
+      }),
+      // 에러는 done 과 error$ 로 이미 나갔다. 의도 스트림 자체는 죽으면 안 된다.
+      catchError(() => EMPTY),
+      finalize(() => intent.done.complete()),
+      ignoreElements(),
+    );
+  }
+
+  /**
+   * 연결 하나의 수명.
+   *
+   *   시도(백오프 재시도 포함) → OPEN → 소켓이 닫힐 때까지 유지 → (repeat) 다시 시도
+   *
+   * 이 Observable 이 구독돼 있는 동안만 연결을 소유한다. 구독이 끊기면 finalize 가 abort 하고,
+   * 어댑터가 소켓을 놓는다. OPEN 도달 시 값 하나를 emit 해서 connect() 의 Promise 를 푼다.
+   */
+  #session(): Observable<void> {
+    return defer(() => {
+      const previous = this.connectionState;
+      if (previous !== ConnectionState.IDLE && previous !== ConnectionState.CLOSED) {
+        return EMPTY;
+      }
+
+      const adapter = this.ensureAdapter();
+      const lifetime = new AbortController();
+      // 첫 시도인지 재연결인지만 구분하는 지역 상태. 이 흐름 밖으로 나가지 않는다.
+      let reconnecting = false;
+
+      return defer(() => {
+        this.#setState(reconnecting ? ConnectionState.RECONNECTING : ConnectionState.CONNECTING);
+        // onBeforeConnect 만 연결을 거부(throw)할 수 있다. 거부되면 상태를 되돌리고 그대로 던진다.
+        return from(this.dispatch("onBeforeConnect")).pipe(
+          catchError((error) => {
+            this.#setState(previous);
+            return throwError(() => toError(error));
+          }),
+          switchMap(() => this.#attempts(adapter, lifetime.signal)),
+        );
+      }).pipe(
+        switchMap(() => {
+          reconnecting = true;
+          return concat(this.#opened(), this.#untilClosed());
+        }),
+        // 소켓이 닫히면 위 흐름이 complete 한다 → 같은 정책으로 다시 시도한다.
+        repeat(),
+        finalize(() => lifetime.abort()),
+      );
+    });
   }
 
   /**
    * adapter.connect() 를 ReconnectConfig 대로 재시도한다.
    * - maxAttempts 는 "첫 시도를 제외한" 재시도 횟수다 (총 시도 = 1 + maxAttempts).
    * - 재시도 대기 시작 시 RECONNECTING 으로 바꾸고 reconnectAttempt$ 를 emit 한다.
-   * - disconnect() 가 #stopReconnect$ 를 쏘면 ReconnectAbortedError 로 빠져나온다.
+   * - 전부 실패하면 CLOSED 로 가고 maxReconnectReached$ / error$ 로 알린 뒤 에러를 던진다.
    */
-  async #connectWithRetry(adapter: TAdapter): Promise<void> {
-    const attempt$ = defer(() => from(adapter.connect())).pipe(
+  #attempts(adapter: TAdapter, signal: AbortSignal): Observable<void> {
+    return defer(() => from(adapter.connect(signal))).pipe(
       retry({
         count: this.#reconnect.maxAttempts,
         delay: (_error, retryCount) => {
@@ -304,32 +322,64 @@ export abstract class WebSocketController<
           return timer(computeReconnectDelay(this.#reconnect, retryCount));
         },
       }),
-      takeUntil(this.#stopReconnect$),
+      catchError((cause) => {
+        // 각 시도의 원인 에러는 어댑터 onError 콜백을 통해 이미 error$ 로 나갔다.
+        // 여기선 "재시도 소진" 이라는 별개 사건을 한 번만 알린다 (같은 에러 중복 emit 방지).
+        const failure = new Error(
+          `Maximum reconnection attempts (${this.#reconnect.maxAttempts}) reached`,
+          { cause },
+        );
+        return concat(
+          defer(() => {
+            this.#setState(ConnectionState.CLOSED);
+            this.#maxReconnectReachedSubject.next();
+            return from(this.#emitError(failure));
+          }).pipe(ignoreElements()),
+          throwError(() => failure),
+        );
+      }),
     );
+  }
 
-    try {
-      await firstValueFrom(attempt$);
-    } catch (error) {
-      // takeUntil 이 emit 전에 스트림을 닫으면 firstValueFrom 은 EmptyError 를 던진다 = disconnect() 로 중단됨
-      if (error instanceof EmptyError) {
-        throw new ReconnectAbortedError();
-      }
-      throw error;
-    }
+  /** 연결 성립 확정. 상태/이벤트/훅을 처리하고 "열렸다" 는 값 하나를 emit 한다. */
+  #opened(): Observable<void> {
+    return defer(() => {
+      this.#reconnectAttempts = 0;
+      this.#setState(ConnectionState.OPEN);
+      this.#connectSubject.next();
+      // 연결은 이미 성립했다. 플러그인 실패가 연결을 실패로 만들면 안 되므로 error$ 로만 흘린다.
+      return from(this.#dispatchSafe("onAfterConnect"));
+    });
+  }
+
+  /** 소켓이 닫힐 때까지 연결을 유지한다. 닫히면 알리고 complete — 다음 재시도로 넘어간다. */
+  #untilClosed(): Observable<never> {
+    return this.#socketClosed$.pipe(
+      take(1),
+      tap((info) => this.#disconnectSubject.next({ ...info, manual: false })),
+      ignoreElements(),
+    );
   }
 
   /**
-   * OPEN 상태에서 소켓이 끊기면 자동 재연결에 들어간다.
-   * CONNECTING/RECONNECTING 중의 close 는 재시도 루프가 이미 처리하므로 무시하고,
-   * CLOSING/IDLE 의 close 는 수동 disconnect 이므로 무시한다.
+   * 종료. 상태는 여기서 확정한다 — 끊는 건 로컬 결정이라 브로커 응답을 기다리지 않는다.
+   * 세션 흐름은 이 의도가 들어온 순간 이미 구독 해제됐고, 그 finalize 의 abort 가 소켓을 놓는다.
+   * 여기서 다시 부르는 adapter.disconnect() 는 그 정리가 끝났음을 확인하는 멱등 호출이다.
    */
-  async #handleUnexpectedClose(): Promise<void> {
-    if (this.connectionState !== ConnectionState.OPEN || !this.adapter) {
-      return;
-    }
-    this.#setState(ConnectionState.RECONNECTING);
-    this.#disconnectSubject.next();
-    await this.#establish(this.adapter);
+  #close(): Observable<void> {
+    return defer(() => {
+      const state = this.connectionState;
+      if (state === ConnectionState.IDLE || state === ConnectionState.CLOSED) {
+        return EMPTY;
+      }
+
+      this.#reconnectAttempts = 0;
+      this.#setState(ConnectionState.IDLE);
+
+      return from(this.adapter?.disconnect() ?? Promise.resolve()).pipe(
+        tap(() => this.#disconnectSubject.next({ manual: true })),
+      );
+    });
   }
 
   async #emitError(error: Error): Promise<void> {

@@ -1,3 +1,5 @@
+import type { SocketCloseInfo } from "../CloseInfo";
+
 /**
  * Adapter 계층 공통 계약.
  *
@@ -14,16 +16,29 @@
 export type SendArgs<TSend> = TSend extends undefined ? [] : [options: TSend];
 
 export interface IWebSocketClientAdapter<TSend = undefined, TMessage = string> {
-  /** 단일 연결 시도. 성공하면 resolve, 실패하면 reject. 재시도는 Controller 몫. */
-  connect(): Promise<void>;
-  /** 연결 종료. 종료 완료 후 resolve. */
+  /**
+   * 단일 연결 시도. 성공하면 resolve, 실패하면 reject. 재시도는 Controller 몫.
+   *
+   * `signal` 은 이 연결의 수명이다. abort 되면 시도 중이든 이미 연결됐든 어댑터는 소켓을 놓는다.
+   * 취소 판단을 어댑터 내부 플래그로 흉내 내지 않고 신호 하나로 통일한다.
+   */
+  connect(signal: AbortSignal): Promise<void>;
+  /**
+   * 연결 종료. **로컬 자원(소켓 핸들)을 놓은 시점에 resolve 한다.**
+   *
+   * 브로커의 종료 확인(RECEIPT, close 프레임)을 기다리면 안 된다. 그 확인은 상대와 네트워크에
+   * 달려 있어 도착 보장이 없고, 기다리는 순간 "끊는다"는 로컬 결정이 상대에게 인질로 잡힌다.
+   * 우아한 종료 프레임은 보내되(best effort), 그 응답은 기다리지 않는다.
+   *
+   * 이미 놓은 뒤에 다시 불러도 안전하다 (멱등).
+   */
   disconnect(): Promise<void>;
   /** 연결 안 된 상태면 throw. 연결 여부 판단은 Controller 가 먼저 한다. */
   send(data: string, ...args: SendArgs<TSend>): void;
   onMessage(callback: (data: TMessage) => void): void;
   onError(callback: (error: Error) => void): void;
-  /** 소켓이 닫혔을 때 (수동/비수동 구분 없음 — 판단은 Controller 상태로) */
-  onClose(callback: () => void): void;
+  /** 소켓이 닫혔을 때. 수동/비수동 구분은 Controller 가 자기 상태로 판단한다. */
+  onClose(callback: (info: SocketCloseInfo) => void): void;
   onConnect(callback: () => void): void;
 }
 
@@ -36,12 +51,12 @@ export abstract class WebSocketClientAdapter<T, C, TMessage = string, TSend = un
 {
   protected client?: T;
 
-  public abstract connect(config?: C): Promise<void>;
+  public abstract connect(signal: AbortSignal, config?: C): Promise<void>;
   public abstract disconnect(): Promise<void>;
   public abstract send(data: string, ...args: SendArgs<TSend>): void;
   public abstract onMessage(callback: (data: TMessage) => void): void;
   public abstract onError(callback: (error: Error) => void): void;
-  public abstract onClose(callback: () => void): void;
+  public abstract onClose(callback: (info: SocketCloseInfo) => void): void;
   public abstract onConnect(callback: () => void): void;
   /** 어댑터 내장 상태값 (브라우저 readyState / StompSocketState 등). Controller의 ConnectionState와 별개. */
   public abstract networkStatus(): number;
