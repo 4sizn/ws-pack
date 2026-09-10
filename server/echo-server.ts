@@ -1,52 +1,50 @@
 import WebSocket from "ws";
 
-// WebSocket 서버 설정 타입 정의
+/**
+ * 데모용 순수 WebSocket 서버. destination 개념이 없으므로 방은 접속 URL 로 정한다:
+ * `ws://127.0.0.1:8010/?room=<name>` 으로 붙은 참가자끼리만 서로의 메시지를 받는다.
+ *
+ * 발신자에게도 되돌려 보낸다 — 데모가 낙관적 추가 없이 서버 에코만 렌더하기 때문이고,
+ * STOMP 브로커의 fanout 과 규칙을 맞추기 위함이다.
+ */
 interface ServerConfig {
   port: number;
 }
 
-// 서버 설정
 const config: ServerConfig = {
   port: 8010,
 };
 
-// WebSocket 서버 생성
 const wss = new WebSocket.Server(config);
+const rooms = new Map<WebSocket, string>();
 
 console.log(`WebSocket 서버가 ws://localhost:${config.port} 에서 실행 중입니다`);
 
-// 클라이언트 연결 처리
-wss.on("connection", (ws: WebSocket) => {
-  console.log("클라이언트가 연결되었습니다");
+wss.on("connection", (ws: WebSocket, request) => {
+  const room = new URL(request.url ?? "/", "ws://localhost").searchParams.get("room") ?? "";
+  rooms.set(ws, room);
+  console.log(`클라이언트 연결: room=${room || "(없음)"} (현재 ${rooms.size}개)`);
 
-  // 클라이언트로부터 메시지 수신
   ws.on("message", (message: WebSocket.RawData) => {
-    const messageString = message.toString();
-    console.log(`클라이언트로부터 받은 메시지: ${messageString}`);
-
-    // 에코 응답
-    for (const client of wss.clients) {
-      if (client.readyState === WebSocket.OPEN) {
-        client.send(`서버 응답: ${messageString}`);
+    const payload = message.toString();
+    for (const [client, joined] of rooms) {
+      if (joined === room && client.readyState === WebSocket.OPEN) {
+        client.send(payload);
       }
     }
   });
 
-  // 연결 종료 처리
   ws.on("close", () => {
-    console.log("클라이언트 연결이 종료되었습니다");
+    rooms.delete(ws);
+    console.log(`클라이언트 종료: room=${room || "(없음)"} (남은 ${rooms.size}개)`);
   });
 
-  // 오류 처리
   ws.on("error", (error: Error) => {
+    rooms.delete(ws);
     console.error("WebSocket 오류:", error);
   });
-
-  // 연결 성공 메시지 전송
-  ws.send("서버에 연결되었습니다!");
 });
 
-// 서버 오류 처리
 wss.on("error", (error: Error) => {
   console.error("서버 오류:", error);
 });

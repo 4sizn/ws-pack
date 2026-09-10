@@ -29,8 +29,8 @@ export interface ChatRoom {
   id: string;
   title: string;
   memberCount: number;
-  /** 이 방이 붙는 STOMP destination. 방 하나당 클라이언트 인스턴스 하나가 여기에 구독/발행한다. */
-  destination: string;
+  /** 방 이름. 방 하나당 클라이언트 인스턴스 하나가 여기에 붙는다. 프로토콜이 주소로 바꾼다. */
+  room: string;
   /** 화면 초기 표시용 과거 메시지. 실시간 메시지는 뒤에 붙는다. */
   messages: ChatMessage[];
 }

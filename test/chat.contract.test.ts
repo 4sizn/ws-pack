@@ -28,9 +28,13 @@ for (const driver of drivers) {
       return member;
     };
 
-    /** 서버가 구독을 인지할 때까지 기다린다. 이걸 건너뛰면 발행이 구독보다 먼저 도착할 수 있다. */
+    /**
+     * 서버가 수신 대기자를 인지할 때까지 기다린다. 이걸 건너뛰면 발행이 구독보다 먼저 도착할 수 있다.
+     * 최소값으로 비교하는 이유: 구독 단계가 따로 없는 프로토콜에서는 연결한 참가자가 곧 대기자라
+     * 아직 듣지 않는 참가자까지 포함돼 수가 더 많을 수 있다.
+     */
     const readyToReceive = (count: number) =>
-      waitFor(() => backend.subscriptionCount === count, `수신 대기자 ${count}명 등록`);
+      waitFor(() => backend.subscriptionCount >= count, `수신 대기자 ${count}명 이상 등록`);
 
     beforeEach(async () => {
       backend = await driver.start();

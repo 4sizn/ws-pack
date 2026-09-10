@@ -15,3 +15,11 @@ export function onAbort(signal: AbortSignal, callback: () => void): void {
   }
   signal.addEventListener("abort", callback, { once: true });
 }
+
+/**
+ * 취소 사유를 Error 로 정규화한다. `AbortController.abort()` 는 reason 없이도 부를 수 있고,
+ * 그 경우 환경에 따라 reason 이 비어 있거나 Error 가 아닐 수 있다.
+ */
+export function abortReason(signal: AbortSignal): Error {
+  return signal.reason instanceof Error ? signal.reason : new Error("connect aborted");
+}

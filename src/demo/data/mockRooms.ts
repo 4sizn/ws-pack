@@ -37,7 +37,7 @@ export const mockRooms: ChatRoom[] = [
     id: "room-team",
     title: "프론트엔드 팀",
     memberCount: 4,
-    destination: "/topic/ws-pack.room-team",
+    room: "ws-pack.room-team",
     messages: [
       msg("room-team", users.jimin, "다들 점심 뭐 드세요?", 0),
       msg("room-team", users.sunwoo, "저는 김치찌개요 🍲", 2),
@@ -51,7 +51,7 @@ export const mockRooms: ChatRoom[] = [
     id: "room-ws",
     title: "ws-pack 개발",
     memberCount: 3,
-    destination: "/topic/ws-pack.room-ws",
+    room: "ws-pack.room-ws",
     messages: [
       msg("room-ws", users.taeho, "STOMP 재연결 백오프 얼마로 잡을까요?", 1),
       msg("room-ws", me, "기본 1초에서 최대 30초까지 지수 증가로 생각 중입니다", 2),
@@ -64,7 +64,7 @@ export const mockRooms: ChatRoom[] = [
     id: "room-deploy",
     title: "배포 알림",
     memberCount: 12,
-    destination: "/topic/ws-pack.room-deploy",
+    room: "ws-pack.room-deploy",
     messages: [
       msg("room-deploy", users.bot, "[staging] v0.4.2 배포가 시작되었습니다", 0),
       msg("room-deploy", users.bot, "[staging] 배포 성공 (2m 14s)", 3),
