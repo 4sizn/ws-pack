@@ -1,4 +1,4 @@
-import type { IMessage } from "@stomp/stompjs";
+import type { IMessage, StompHeaders } from "@stomp/stompjs";
 import {
   BehaviorSubject,
   defer,
@@ -14,10 +14,11 @@ import {
 } from "rxjs";
 import { AbstractController } from "../abstract/AbstractController";
 import {
+  type StompSendOptions,
   StompWebSocketClientAdapter,
   type StompWebSocketClientOptions,
 } from "../adapters/StompWebSocketClientAdapter";
-import type { IWebSocketClientAdapter } from "../adapters/WebSocketClientAdapter";
+import type { IWebSocketClientAdapter, SendArgs } from "../adapters/WebSocketClientAdapter";
 import {
   WindowWebSocketClientAdapter,
   type WindowWebSocketClientOptions,
@@ -52,12 +53,21 @@ function toError(error: unknown): Error {
  * Controller는 연결 정책(재연결/백오프)과 ConnectionState 를 소유한다. Adapter는 "한 번 연결 시도"만 한다.
  *
  * @template TMessage 이 프로토콜의 메시지 페이로드 타입 (Window: string, Stomp: IMessage 등).
- * 구체 타입은 서브클래스(Window/Stomp/Mqtt)가 정한다 — base는 프로토콜을 모른다.
+ * @template TSend    send() 두 번째 인자 타입 (Window: 없음, Stomp: StompSendOptions).
+ * @template TAdapter 구체 Adapter 타입. 서브클래스가 프로토콜 전용 메서드(예: STOMP subscribe)를
+ *                    캐스팅 없이 부르기 위해 좁혀 쓴다. base 는 인터페이스만 본다.
  */
-export abstract class WebSocketController<TMessage = string> extends AbstractController {
+export abstract class WebSocketController<
+  TMessage = string,
+  TSend = undefined,
+  TAdapter extends IWebSocketClientAdapter<TSend, TMessage> = IWebSocketClientAdapter<
+    TSend,
+    TMessage
+  >,
+> extends AbstractController {
   // 플러그인 관리
   readonly #plugins = new Map<string, AbstractPlugin>();
-  protected adapter?: IWebSocketClientAdapter<unknown, TMessage>;
+  protected adapter?: TAdapter;
 
   // 재연결 정책
   readonly #reconnect: ResolvedReconnectConfig;
@@ -144,7 +154,7 @@ export abstract class WebSocketController<TMessage = string> extends AbstractCon
    * 연결 옵션은 각 서브클래스 생성자에서 이미 받아 저장해뒀으므로 여기선 인자가 없다.
    * Controller만 Adapter의 구체 클래스를 안다.
    */
-  protected abstract createAdapter(): IWebSocketClientAdapter<unknown, TMessage>;
+  protected abstract createAdapter(): TAdapter;
 
   /**
    * 연결 시작. IDLE 또는 CLOSED(재시도 소진 후) 에서만 동작하고, 그 외 상태면 무시한다.
@@ -157,9 +167,16 @@ export abstract class WebSocketController<TMessage = string> extends AbstractCon
       return;
     }
 
-    const adapter = this.#ensureAdapter();
+    const adapter = this.ensureAdapter();
     this.#setState(ConnectionState.CONNECTING);
-    await this.dispatch("onBeforeConnect");
+
+    // onBeforeConnect 만 연결을 거부(throw)할 수 있다. 거부되면 상태를 되돌리고 그대로 던진다.
+    try {
+      await this.dispatch("onBeforeConnect");
+    } catch (error) {
+      this.#setState(state);
+      throw error;
+    }
 
     const error = await this.#establish(adapter);
     if (error) {
@@ -186,25 +203,42 @@ export abstract class WebSocketController<TMessage = string> extends AbstractCon
     const wasOpen = state === ConnectionState.OPEN;
     this.#setState(ConnectionState.CLOSING);
     if (wasOpen) {
-      await this.dispatch("onBeforeDisconnect");
+      // 플러그인이 throw 해도 종료는 계속한다 — 상태가 CLOSING 에 갇히면 안 된다
+      await this.#dispatchSafe("onBeforeDisconnect");
     }
 
-    await this.adapter?.disconnect();
-    this.#reconnectAttempts = 0;
-    this.#setState(ConnectionState.IDLE);
-    this.#disconnectSubject.next();
+    try {
+      await this.adapter?.disconnect();
+    } finally {
+      this.#reconnectAttempts = 0;
+      this.#setState(ConnectionState.IDLE);
+      this.#disconnectSubject.next();
+    }
 
     if (wasOpen) {
-      await this.dispatch("onAfterDisconnect");
+      await this.#dispatchSafe("onAfterDisconnect");
     }
+  }
+
+  /**
+   * 메시지 전송. OPEN 이 아니면 throw — 큐잉하지 않는다. 필요하면 호출 측이 connect$ 를 기다린다.
+   */
+  public send(data: string, ...args: SendArgs<TSend>): void {
+    if (this.connectionState !== ConnectionState.OPEN || !this.adapter) {
+      throw new Error(`[${this.name}] cannot send: connection is ${this.connectionState}`);
+    }
+    this.adapter.send(data, ...args);
   }
 
   public destroy?(): void {
     throw new Error("Method not implemented.");
   }
 
-  /** Adapter 는 한 번만 만들고, 콜백도 그때 한 번만 건다 (connect() 재호출 시 중복 등록 방지). */
-  #ensureAdapter(): IWebSocketClientAdapter<unknown, TMessage> {
+  /**
+   * Adapter 는 한 번만 만들고, 콜백도 그때 한 번만 건다 (connect() 재호출 시 중복 등록 방지).
+   * 서브클래스가 연결 전에 어댑터 기능(예: STOMP subscribe 예약)을 써야 할 때도 이걸 부른다.
+   */
+  protected ensureAdapter(): TAdapter {
     if (this.adapter) {
       return this.adapter;
     }
@@ -225,16 +259,19 @@ export abstract class WebSocketController<TMessage = string> extends AbstractCon
    * 재시도 소진이면 CLOSED + maxReconnectReached$ + error$ 처리 후 그 에러를 반환.
    * disconnect() 로 중단됐으면 상태를 건드리지 않고 undefined 반환 (disconnect() 가 상태를 IDLE 로 마무리한다).
    */
-  async #establish(
-    adapter: IWebSocketClientAdapter<unknown, TMessage>,
-  ): Promise<Error | undefined> {
+  async #establish(adapter: TAdapter): Promise<Error | undefined> {
     try {
       await this.#connectWithRetry(adapter);
     } catch (error) {
       if (error instanceof ReconnectAbortedError) {
         return undefined;
       }
-      const failure = toError(error);
+      // 각 시도의 원인 에러는 어댑터 onError 콜백을 통해 이미 error$ 로 나갔다.
+      // 여기선 "재시도 소진" 이라는 별개 사건을 한 번만 알린다 (같은 에러 중복 emit 방지).
+      const failure = new Error(
+        `Maximum reconnection attempts (${this.#reconnect.maxAttempts}) reached`,
+        { cause: error },
+      );
       this.#setState(ConnectionState.CLOSED);
       this.#maxReconnectReachedSubject.next();
       await this.#emitError(failure);
@@ -244,7 +281,8 @@ export abstract class WebSocketController<TMessage = string> extends AbstractCon
     this.#reconnectAttempts = 0;
     this.#setState(ConnectionState.OPEN);
     this.#connectSubject.next();
-    await this.dispatch("onAfterConnect");
+    // 연결은 이미 성립했다. 플러그인 실패가 연결을 실패로 만들면 안 되므로 error$ 로만 흘린다.
+    await this.#dispatchSafe("onAfterConnect");
     return undefined;
   }
 
@@ -254,7 +292,7 @@ export abstract class WebSocketController<TMessage = string> extends AbstractCon
    * - 재시도 대기 시작 시 RECONNECTING 으로 바꾸고 reconnectAttempt$ 를 emit 한다.
    * - disconnect() 가 #stopReconnect$ 를 쏘면 ReconnectAbortedError 로 빠져나온다.
    */
-  async #connectWithRetry(adapter: IWebSocketClientAdapter<unknown, TMessage>): Promise<void> {
+  async #connectWithRetry(adapter: TAdapter): Promise<void> {
     const attempt$ = defer(() => from(adapter.connect())).pipe(
       retry({
         count: this.#reconnect.maxAttempts,
@@ -356,6 +394,15 @@ export abstract class WebSocketController<TMessage = string> extends AbstractCon
     }
   }
 
+  /** 플러그인이 throw 해도 상태 머신을 멈추지 않고 error$ 로 돌린다. onBeforeConnect 를 제외한 모든 훅에 사용. */
+  async #dispatchSafe(hook: PluginHook): Promise<void> {
+    try {
+      await this.dispatch(hook);
+    } catch (error) {
+      await this.#emitError(toError(error));
+    }
+  }
+
   private async dispatchError(error: Error): Promise<void> {
     for (const plugin of this.#plugins.values()) {
       if (plugin instanceof WebSocketMonitorPlugin) {
@@ -375,12 +422,16 @@ export class WindowWebSocketController extends WebSocketController<string> {
     }
   }
 
-  protected createAdapter(): IWebSocketClientAdapter<unknown, string> {
+  protected createAdapter(): IWebSocketClientAdapter<undefined, string> {
     return new WindowWebSocketClientAdapter(this.options);
   }
 }
 
-export class StompWebSocketController extends WebSocketController<IMessage> {
+export class StompWebSocketController extends WebSocketController<
+  IMessage,
+  StompSendOptions,
+  StompWebSocketClientAdapter
+> {
   public readonly name = "StompWebSocketController";
 
   constructor(private readonly options: StompWebSocketClientOptions) {
@@ -390,8 +441,16 @@ export class StompWebSocketController extends WebSocketController<IMessage> {
     }
   }
 
-  protected createAdapter(): IWebSocketClientAdapter<unknown, IMessage> {
+  protected createAdapter(): StompWebSocketClientAdapter {
     return new StompWebSocketClientAdapter(this.options);
+  }
+
+  /**
+   * STOMP destination 구독. connect() 전에 불러도 되고(연결되면 걸림), 재연결되면 자동으로 다시 걸린다.
+   * 반환 Observable 을 unsubscribe 하면 STOMP 구독도 해제된다.
+   */
+  public subscribe(destination: string, headers?: StompHeaders): Observable<IMessage> {
+    return this.ensureAdapter().subscribe(destination, headers);
   }
 }
 
@@ -403,7 +462,7 @@ export class MqttWebSocketController extends WebSocketController<string> {
     super();
   }
 
-  protected createAdapter(): IWebSocketClientAdapter<unknown, string> {
+  protected createAdapter(): IWebSocketClientAdapter<undefined, string> {
     throw new Error("Method not implemented.");
   }
 }

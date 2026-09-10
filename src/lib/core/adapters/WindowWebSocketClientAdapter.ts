@@ -34,7 +34,7 @@ export class WindowWebSocketClientAdapter extends WebSocketClientAdapter<
   public disconnect(): Promise<void> {
     throw new Error("Method not implemented.");
   }
-  public send(): void {
+  public send(_data: string): void {
     throw new Error("Method not implemented.");
   }
   public onMessage(_callback: (data: string) => void): void {

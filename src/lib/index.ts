@@ -10,6 +10,7 @@ export {
 export type { ReconnectConfig, ReconnectInfo } from "./core/Reconnect";
 export { ReconnectTimeMode } from "./core/Reconnect";
 export type {
+  StompSendOptions,
   StompWebSocketClientOptions,
   WindowWebSocketClientOptions,
 } from "./core/WebSocketClient";
