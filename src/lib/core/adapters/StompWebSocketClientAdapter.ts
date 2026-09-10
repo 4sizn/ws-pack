@@ -35,6 +35,17 @@ type ManagedStompConfigKeys =
   | "onWebSocketClose"
   | "onUnhandledMessage";
 
+/**
+ * STOMP 어댑터 옵션.
+ *
+ * **하트비트는 기본으로 켜져 있다.** stompjs 의 `heartbeatIncoming`/`heartbeatOutgoing` 기본값이
+ * 각각 10초이고, 서버가 heart-beat 협상에 응하면 그 간격으로 왕복을 주고받는다. 서버 활동이
+ * 끊기면 stompjs 가 소켓을 닫고, 그 close 가 이 어댑터의 onClose 를 거쳐 Controller 의 재연결로
+ * 이어진다 — 죽은 연결을 알아채는 보편적인 경로가 이것이다.
+ *
+ * 간격을 바꾸려면 `heartbeatIncoming`/`heartbeatOutgoing` 을 그대로 넘기면 된다(0 이면 끔).
+ * revalidate() 는 그 간격을 기다리지 않고 지금 당장 확인하고 싶을 때 쓰는 별개 수단이다.
+ */
 export interface StompWebSocketClientOptions extends Omit<StompConfig, ManagedStompConfigKeys> {
   /** 이미 만들어진 stompjs Client 를 주입. 없으면 어댑터가 내부에서 기본 생성한다. */
   client?: StompClient;

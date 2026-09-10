@@ -23,6 +23,16 @@ import { WebSocketClientAdapter } from "./WebSocketClientAdapter";
  */
 type ManagedClientOptionKeys = "reconnectPeriod" | "manualConnect";
 
+/**
+ * MQTT 어댑터 옵션.
+ *
+ * **keepalive 는 기본으로 켜져 있다.** mqtt.js 기본값은 60초이고, 그 동안 오간 것이 없으면
+ * PINGREQ 를 보내 PINGRESP 를 기다린다. 응답이 없으면 연결을 닫고, 그 close 가 이 어댑터를 거쳐
+ * Controller 의 재연결로 이어진다 — 죽은 연결을 알아채는 보편적인 경로가 이것이다.
+ *
+ * 모바일처럼 빨리 알아야 하는 곳에서는 `keepalive` 를 줄인다(초 단위, 0 이면 끔).
+ * revalidate() 는 그 간격을 기다리지 않고 지금 당장 확인하고 싶을 때 쓰는 별개 수단이다.
+ */
 export interface MqttWebSocketClientOptions extends Omit<IClientOptions, ManagedClientOptionKeys> {
   /** 브로커 URL (`ws://` 또는 `wss://`) */
   brokerURL: string;

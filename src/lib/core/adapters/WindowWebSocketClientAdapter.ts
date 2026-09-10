@@ -8,6 +8,30 @@ import { WebSocketClientAdapter } from "./WebSocketClientAdapter";
 /** 브라우저 내장 `WebSocket` 생성자가 받는 인자 타입 (url, protocols) */
 type BrowserWebSocketArgs = ConstructorParameters<typeof WebSocket>;
 
+/**
+ * 애플리케이션 하트비트 설정.
+ *
+ * 죽은 연결을 알아채는 보편적인 방법은 주기적 왕복(하트비트)이다 — STOMP 는 `heart-beat`,
+ * MQTT 는 keepalive/PINGREQ 를 프로토콜이 직접 갖고 있고, Socket.IO 같은 라이브러리도 자체
+ * ping/pong 을 돌린다. 순수 WebSocket 만 그 수단이 없다: 브라우저 API 로는 ping 프레임을
+ * 보낼 수 없어서, 서버와 약속한 애플리케이션 메시지로 대신할 수밖에 없다.
+ *
+ * 그래서 값은 전부 문자열과 숫자다 — 함수로 받으면 워커로 넘길 때 구조화 복제가 실패한다.
+ */
+export interface WindowHeartbeatConfig {
+  /** ping 을 보내는 주기(ms) */
+  intervalMs: number;
+  /** ping 을 보낸 뒤 응답을 기다리는 시간(ms). 지나면 연결이 죽은 것으로 보고 소켓을 닫는다. */
+  timeoutMs: number;
+  /** 서버에 보낼 ping 메시지 */
+  ping: string;
+  /**
+   * 응답으로 인정할 메시지. 생략하면 **아무 수신 메시지나** 살아 있다는 증거로 본다
+   * (에코 서버처럼 ping 을 그대로 돌려주는 경우 포함).
+   */
+  pong?: string;
+}
+
 export interface WindowWebSocketClientOptions {
   /** `new WebSocket(url, protocols)` 의 url과 동일한 타입 */
   url: BrowserWebSocketArgs[0];
@@ -19,6 +43,11 @@ export interface WindowWebSocketClientOptions {
   reconnect?: ReconnectConfig;
   logger?: Logger;
   plugins?: AbstractPlugin[];
+  /**
+   * 애플리케이션 하트비트. 서버가 ping 에 응답해 주기로 약속돼 있을 때만 설정한다.
+   * 설정하면 revalidate() 도 이 왕복으로 답한다 — 없으면 소켓이 닫혔는지까지만 본다.
+   */
+  heartbeat?: WindowHeartbeatConfig;
 }
 
 /** `WebSocket.readyState` 의 CLOSED. 소켓이 없을 때 돌려줄 값이라 상수로 둔다. */
@@ -46,6 +75,11 @@ export class WindowWebSocketClientAdapter extends WebSocketClientAdapter<
 
   /** 현재 소켓에 건 리스너 해제 함수. 소켓을 놓을 때 콜백부터 끊는다. */
   #detach?: () => void;
+
+  /** 하트비트 주기 타이머 */
+  #beat?: ReturnType<typeof setInterval>;
+  /** 응답을 기다리는 중인 ping 들. 응답이 오면 전부 풀린다. */
+  readonly #waiting = new Set<(alive: boolean) => void>();
 
   constructor(options: WindowWebSocketClientOptions) {
     super();
@@ -81,6 +115,7 @@ export class WindowWebSocketClientAdapter extends WebSocketClientAdapter<
 
       const onOpen = () => {
         if (!live()) return;
+        this.#startHeartbeat(socket);
         settle(resolve);
         for (const cb of this.#connectCallbacks) cb();
       };
@@ -89,6 +124,8 @@ export class WindowWebSocketClientAdapter extends WebSocketClientAdapter<
         if (!live()) return;
         // 문자열 프레임만 다룬다. 바이너리는 이 어댑터의 계약(TMessage = string) 밖이다.
         if (typeof event.data !== "string") return;
+
+        if (this.#consumePong(event.data)) return;
         for (const cb of this.#messageCallbacks) cb(event.data);
       };
 
@@ -157,6 +194,7 @@ export class WindowWebSocketClientAdapter extends WebSocketClientAdapter<
     if (this.client === socket) {
       this.client = undefined;
     }
+    this.#stopHeartbeat();
     this.#detach?.();
     this.#detach = undefined;
     // CLOSING/CLOSED 에 close() 를 불러도 무해하다 (사양상 no-op).
@@ -187,12 +225,93 @@ export class WindowWebSocketClientAdapter extends WebSocketClientAdapter<
   }
 
   /**
-   * 순수 WebSocket 은 프로토콜 차원의 왕복 수단이 없다. ping/pong 프레임은 브라우저 API 로
-   * 보낼 수 없고, 애플리케이션 ping 은 서버가 약속해 줘야 성립한다.
-   * 그래서 여기서는 소켓이 이미 닫혔는지까지만 본다 — 상대만 사라진 half-open 은 잡지 못한다.
+   * 하트비트가 설정돼 있으면 ping 을 한 번 보내 응답으로 확인한다 — 진짜 왕복이다.
+   *
+   * 없으면 소켓이 이미 닫혔는지까지만 본다. 순수 WebSocket 에는 프로토콜 차원의 ping 이 없고
+   * (브라우저 API 로 ping 프레임을 보낼 수 없다) 애플리케이션 ping 은 서버가 약속해 줘야
+   * 성립하기 때문이다. 이 경우 상대만 사라진 half-open 은 잡지 못한다.
    */
-  public async revalidate(_signal: AbortSignal): Promise<boolean> {
-    return this.client?.readyState === WebSocket.OPEN;
+  public async revalidate(signal: AbortSignal): Promise<boolean> {
+    const socket = this.client;
+    if (socket?.readyState !== WebSocket.OPEN) return false;
+
+    const heartbeat = this.#options.heartbeat;
+    if (!heartbeat) return true;
+
+    return this.#ping(socket, heartbeat, signal);
+  }
+
+  /**
+   * 주기적 하트비트. 응답이 제한 시간 안에 오지 않으면 소켓을 닫는다 —
+   * 닫으면 close 이벤트가 흘러 Controller 의 재연결 경로를 그대로 탄다.
+   * 이건 STOMP 의 heart-beat 나 MQTT 의 keepalive 가 하는 일과 같고, 그 둘은 프로토콜이 대신 해 준다.
+   */
+  #startHeartbeat(socket: WebSocket): void {
+    const heartbeat = this.#options.heartbeat;
+    if (!heartbeat) return;
+
+    this.#stopHeartbeat();
+    this.#beat = setInterval(() => {
+      if (socket.readyState !== WebSocket.OPEN) return;
+      const limit = new AbortController();
+      const timer = setTimeout(() => limit.abort(), heartbeat.timeoutMs);
+      void this.#ping(socket, heartbeat, limit.signal).then((alive) => {
+        clearTimeout(timer);
+        // 리스너는 그대로 두고 닫는다 — close 이벤트가 나가야 재연결이 시작된다.
+        if (!alive && socket.readyState === WebSocket.OPEN) {
+          socket.close(4000, "heartbeat timeout");
+        }
+      });
+    }, heartbeat.intervalMs);
+  }
+
+  #stopHeartbeat(): void {
+    if (this.#beat) clearInterval(this.#beat);
+    this.#beat = undefined;
+    for (const waiter of this.#waiting) waiter(false);
+    this.#waiting.clear();
+  }
+
+  /** ping 하나를 보내고 응답을 기다린다. */
+  #ping(
+    socket: WebSocket,
+    heartbeat: WindowHeartbeatConfig,
+    signal: AbortSignal,
+  ): Promise<boolean> {
+    return new Promise<boolean>((resolve) => {
+      let settled = false;
+      const settle = (alive: boolean) => {
+        if (settled) return;
+        settled = true;
+        this.#waiting.delete(settle);
+        resolve(alive);
+      };
+
+      this.#waiting.add(settle);
+      onAbort(signal, () => settle(false));
+
+      try {
+        socket.send(heartbeat.ping);
+      } catch {
+        settle(false);
+      }
+    });
+  }
+
+  /**
+   * 하트비트 응답이면 삼킨다. 응답을 애플리케이션 메시지로 흘리면 화면에 ping 이 채팅으로 뜬다.
+   * `pong` 을 정하지 않았으면 어떤 수신이든 살아 있다는 증거로 보되, 메시지 자체는 그대로 흘린다.
+   */
+  #consumePong(data: string): boolean {
+    if (this.#waiting.size === 0) return false;
+
+    const heartbeat = this.#options.heartbeat;
+    const isPong = heartbeat?.pong === undefined ? true : data === heartbeat.pong;
+    if (!isPong) return false;
+
+    for (const waiter of [...this.#waiting]) waiter(true);
+    // 우리가 보낸 ping 이 그대로 돌아온 것이면 삼킨다.
+    return heartbeat?.pong !== undefined || data === heartbeat?.ping;
   }
 
   /** 브라우저 소켓의 readyState. 소켓이 없으면 CLOSED. */

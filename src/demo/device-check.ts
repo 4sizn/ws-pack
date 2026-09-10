@@ -41,7 +41,12 @@ function configFor(protocol: Protocol, room: string): WorkerClientConfig {
     case "window":
       return {
         protocol: "window",
-        options: { url: `ws://${host}:8010/?room=${room}`, reconnect },
+        options: {
+          url: `ws://${host}:8010/?room=${room}`,
+          reconnect,
+          // 에코 서버가 받은 것을 그대로 돌려주므로 ping 이 곧 응답이다.
+          heartbeat: { intervalMs: 15_000, timeoutMs: 3_000, ping: "__ws-pack-ping__" },
+        },
       };
     case "mqtt":
       return { protocol: "mqtt", options: { brokerURL: `ws://${host}:8011`, reconnect } };
