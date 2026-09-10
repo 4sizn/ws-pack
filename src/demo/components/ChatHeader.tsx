@@ -1,15 +1,15 @@
-import type { ConnectionState } from "../types"
+import type { ConnectionState } from "../types";
 
 const stateLabel: Record<ConnectionState, string> = {
   connected: "연결됨",
   connecting: "연결 중",
   disconnected: "연결 끊김",
-}
+};
 
 interface ChatHeaderProps {
-  title: string
-  memberCount: number
-  connection: ConnectionState
+  title: string;
+  memberCount: number;
+  connection: ConnectionState;
 }
 
 export function ChatHeader({ title, memberCount, connection }: ChatHeaderProps) {
@@ -22,5 +22,5 @@ export function ChatHeader({ title, memberCount, connection }: ChatHeaderProps) 
         {stateLabel[connection]}
       </span>
     </header>
-  )
+  );
 }

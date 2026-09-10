@@ -1,11 +1,11 @@
-import { useState } from "react"
-import type { ChatMessage, ChatRoom as ChatRoomModel } from "../types"
-import { ChatHeader } from "./ChatHeader"
-import { Composer } from "./Composer"
-import { MessageList } from "./MessageList"
+import { useState } from "react";
+import type { ChatMessage, ChatRoom as ChatRoomModel } from "../types";
+import { ChatHeader } from "./ChatHeader";
+import { Composer } from "./Composer";
+import { MessageList } from "./MessageList";
 
 interface ChatRoomProps {
-  room: ChatRoomModel
+  room: ChatRoomModel;
 }
 
 /**
@@ -13,7 +13,7 @@ interface ChatRoomProps {
  * 이후 ws-pack 라이브러리의 STOMP 구독으로 교체한다.
  */
 export function ChatRoom({ room }: ChatRoomProps) {
-  const [messages, setMessages] = useState<ChatMessage[]>(room.messages)
+  const [messages, setMessages] = useState<ChatMessage[]>(room.messages);
 
   const handleSend = (text: string) => {
     const message: ChatMessage = {
@@ -25,9 +25,9 @@ export function ChatRoom({ room }: ChatRoomProps) {
       sentAt: Date.now(),
       unreadCount: room.memberCount - 1,
       status: room.connection === "connected" ? "sent" : "sending",
-    }
-    setMessages((current) => [...current, message])
-  }
+    };
+    setMessages((current) => [...current, message]);
+  };
 
   return (
     <section className="chat-room">
@@ -35,5 +35,5 @@ export function ChatRoom({ room }: ChatRoomProps) {
       <MessageList messages={messages} />
       <Composer disabled={room.connection === "disconnected"} onSend={handleSend} />
     </section>
-  )
+  );
 }

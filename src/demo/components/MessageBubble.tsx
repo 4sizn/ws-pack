@@ -1,15 +1,15 @@
-import type { ChatMessage } from "../types"
-import { formatTime } from "../utils/format"
-import { Avatar } from "./Avatar"
+import type { ChatMessage } from "../types";
+import { formatTime } from "../utils/format";
+import { Avatar } from "./Avatar";
 
 interface MessageBubbleProps {
-  message: ChatMessage
+  message: ChatMessage;
   /** 직전 메시지와 발신자가 같으면 이름과 아바타를 생략한다. */
-  showSender: boolean
+  showSender: boolean;
 }
 
 export function MessageBubble({ message, showSender }: MessageBubbleProps) {
-  const { mine, sender, text, sentAt, unreadCount, status } = message
+  const { mine, sender, text, sentAt, unreadCount, status } = message;
 
   return (
     <div className={`message-row${mine ? " message-row--mine" : ""}`}>
@@ -34,5 +34,5 @@ export function MessageBubble({ message, showSender }: MessageBubbleProps) {
         </div>
       </div>
     </div>
-  )
+  );
 }

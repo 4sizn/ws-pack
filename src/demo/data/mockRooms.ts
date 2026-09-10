@@ -1,6 +1,6 @@
-import type { ChatMessage, ChatRoom, ChatUser } from "../types"
+import type { ChatMessage, ChatRoom, ChatUser } from "../types";
 
-const me: ChatUser = { id: "me", name: "나", color: "#ffe066" }
+const me: ChatUser = { id: "me", name: "나", color: "#ffe066" };
 
 const users: Record<string, ChatUser> = {
   jimin: { id: "jimin", name: "김지민", color: "#8ecae6" },
@@ -8,13 +8,13 @@ const users: Record<string, ChatUser> = {
   hana: { id: "hana", name: "이하나", color: "#ffb3c1" },
   taeho: { id: "taeho", name: "최태호", color: "#a8dadc" },
   bot: { id: "bot", name: "배포봇", color: "#b7e4c7" },
-}
+};
 
 /** 데모 타임스탬프 기준 시각. 렌더 시각과 무관하게 고정한다. */
-const base = new Date("2026-09-10T13:00:00+09:00").getTime()
-const at = (minutes: number) => base + minutes * 60_000
+const base = new Date("2026-09-10T13:00:00+09:00").getTime();
+const at = (minutes: number) => base + minutes * 60_000;
 
-let seq = 0
+let seq = 0;
 const msg = (
   roomId: string,
   sender: ChatUser,
@@ -30,7 +30,7 @@ const msg = (
   sentAt: at(minutes),
   unreadCount,
   status: "sent",
-})
+});
 
 export const mockRooms: ChatRoom[] = [
   {
@@ -73,4 +73,4 @@ export const mockRooms: ChatRoom[] = [
       msg("room-deploy", users.bot, "[production] 승인 대기 중입니다", 9, 5),
     ],
   },
-]
+];

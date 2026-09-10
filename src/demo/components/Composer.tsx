@@ -1,28 +1,28 @@
-import type { KeyboardEvent } from "react"
-import { useState } from "react"
+import type { KeyboardEvent } from "react";
+import { useState } from "react";
 
 interface ComposerProps {
-  disabled?: boolean
-  onSend: (text: string) => void
+  disabled?: boolean;
+  onSend: (text: string) => void;
 }
 
 export function Composer({ disabled = false, onSend }: ComposerProps) {
-  const [draft, setDraft] = useState("")
-  const canSend = draft.trim().length > 0 && !disabled
+  const [draft, setDraft] = useState("");
+  const canSend = draft.trim().length > 0 && !disabled;
 
   const send = () => {
-    if (!canSend) return
-    onSend(draft.trim())
-    setDraft("")
-  }
+    if (!canSend) return;
+    onSend(draft.trim());
+    setDraft("");
+  };
 
   // Enter 로 전송하고 Shift+Enter 는 줄바꿈으로 남긴다.
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Enter" && !event.shiftKey) {
-      event.preventDefault()
-      send()
+      event.preventDefault();
+      send();
     }
-  }
+  };
 
   return (
     <div className="composer">
@@ -39,5 +39,5 @@ export function Composer({ disabled = false, onSend }: ComposerProps) {
         전송
       </button>
     </div>
-  )
+  );
 }
