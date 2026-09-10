@@ -1,0 +1,22 @@
+# STOMP 통합 테스트용 실제 브로커. `npm run stomp:up` 으로 띄운다.
+# guest 계정은 loopback 에서만 허용되고, 컨테이너 밖에서 들어오는 연결은
+# loopback 이 아니다. 그래서 전용 테스트 계정을 만든다.
+services:
+  rabbitmq:
+    image: rabbitmq:4
+    command:
+      - bash
+      - -c
+      - rabbitmq-plugins enable --offline rabbitmq_web_stomp && rabbitmq-server
+    environment:
+      RABBITMQ_DEFAULT_USER: test
+      RABBITMQ_DEFAULT_PASS: test
+    ports:
+      # Web-STOMP(WebSocket) 엔드포인트: ws://127.0.0.1:15674/ws
+      - '15674:15674'
+    healthcheck:
+      test: ['CMD', 'rabbitmq-diagnostics', '-q', 'check_port_connectivity']
+      interval: 5s
+      timeout: 10s
+      retries: 20
+      start_period: 30s
