@@ -355,10 +355,15 @@
     /* 세로 배치에서는 flex-basis 가 높이를 결정한다. 기본값 `flex: 1 1 0` 을 그대로 두면
        basis 0 이 height 를 이겨 카드가 0px 로 접힌다 — 폰에서 방이 사라지는 원인이었다. */
     flex: 0 0 auto;
-    /* vh 는 브라우저 툴바가 덮는 영역까지 포함해서 계산된다 — iOS Safari 에서 입력창이
-       하단 툴바 뒤로 숨는 원인이다. dvh 는 지금 실제로 보이는 높이를 쓴다. */
     height: 68vh;
-    height: 68dvh;
+  }
+
+  /* vh 는 브라우저 툴바가 덮는 영역까지 포함해서 계산된다 — iOS Safari 에서 입력창이 하단 툴바
+     뒤로 숨는 원인이다. dvh 는 지금 실제로 보이는 높이를 쓴다. 지원하는 브라우저에서만 덮어쓴다. */
+  @supports (height: 1dvh) {
+    .chat-room {
+      height: 68dvh;
+    }
   }
 
   .topic-switch {

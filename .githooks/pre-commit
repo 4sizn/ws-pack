@@ -8,6 +8,9 @@ set -e
 echo "pre-commit: tsc -b"
 bunx tsc -b
 
+echo "pre-commit: biome"
+bunx biome check .
+
 echo "pre-commit: bun test"
 bun test
 
