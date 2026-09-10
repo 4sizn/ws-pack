@@ -1,15 +1,56 @@
-import type { IMessage, StompConfig } from "@stomp/stompjs";
-import { BehaviorSubject, distinctUntilChanged, type Observable, Subject } from "rxjs";
+import type { IMessage } from "@stomp/stompjs";
+import {
+  BehaviorSubject,
+  defer,
+  distinctUntilChanged,
+  EmptyError,
+  firstValueFrom,
+  from,
+  type Observable,
+  retry,
+  Subject,
+  takeUntil,
+  timer,
+} from "rxjs";
 import { AbstractController } from "../abstract/AbstractController";
+import {
+  StompWebSocketClientAdapter,
+  type StompWebSocketClientOptions,
+} from "../adapters/StompWebSocketClientAdapter";
+import type { IWebSocketClientAdapter } from "../adapters/WebSocketClientAdapter";
+import {
+  WindowWebSocketClientAdapter,
+  type WindowWebSocketClientOptions,
+} from "../adapters/WindowWebSocketClientAdapter";
 import { ConnectionState } from "../ConnectionState";
 import type { AbstractPlugin } from "../plugins/AbstractPlugin";
 import { WebSocketMonitorPlugin } from "../plugins/AbstractPlugin";
-import type { IWebSocketClientAdapter } from "../WebSocketClient";
-import { StompWebSocketClientAdapter } from "../WebSocketClient";
+import {
+  computeReconnectDelay,
+  type ReconnectConfig,
+  type ReconnectInfo,
+  type ResolvedReconnectConfig,
+  resolveReconnectConfig,
+} from "../Reconnect";
 
 type PluginHook = "onBeforeConnect" | "onAfterConnect" | "onBeforeDisconnect" | "onAfterDisconnect";
 
+/** disconnect() 가 진행 중인 재시도를 끊었을 때 내부적으로 쓰는 신호. 밖으로 안 나간다. */
+class ReconnectAbortedError extends Error {
+  constructor() {
+    super("reconnect aborted by disconnect()");
+    this.name = "ReconnectAbortedError";
+  }
+}
+
+function toError(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error));
+}
+
 /**
+ * 구조 관계: Client -> Controller -> Adapter.
+ * Controller는 연결 정책(재연결/백오프)과 ConnectionState 를 소유한다. Adapter는 "한 번 연결 시도"만 한다.
+ *
  * @template TMessage 이 프로토콜의 메시지 페이로드 타입 (Window: string, Stomp: IMessage 등).
  * 구체 타입은 서브클래스(Window/Stomp/Mqtt)가 정한다 — base는 프로토콜을 모른다.
  */
@@ -18,11 +59,23 @@ export abstract class WebSocketController<TMessage = string> extends AbstractCon
   readonly #plugins = new Map<string, AbstractPlugin>();
   protected adapter?: IWebSocketClientAdapter<unknown, TMessage>;
 
+  // 재연결 정책
+  readonly #reconnect: ResolvedReconnectConfig;
+  #reconnectAttempts = 0;
+  readonly #stopReconnect$ = new Subject<void>();
+
   readonly #connectionState$ = new BehaviorSubject<ConnectionState>(ConnectionState.IDLE);
   readonly #connectSubject = new Subject<void>();
   readonly #disconnectSubject = new Subject<void>();
   readonly #errorSubject = new Subject<Error>();
   readonly #messageSubject = new Subject<TMessage>();
+  readonly #reconnectAttemptSubject = new Subject<ReconnectInfo>();
+  readonly #maxReconnectReachedSubject = new Subject<void>();
+
+  constructor(reconnect?: ReconnectConfig) {
+    super();
+    this.#reconnect = resolveReconnectConfig(reconnect);
+  }
 
   // ============================================
   // Public Observable Streams
@@ -38,12 +91,12 @@ export abstract class WebSocketController<TMessage = string> extends AbstractCon
     return this.#connectionState$.pipe(distinctUntilChanged());
   }
 
-  /** 연결 성공 이벤트 */
+  /** 연결 성공 이벤트 (최초 연결 + 재연결 성공 모두) */
   public get connect$(): Observable<void> {
     return this.#connectSubject.asObservable();
   }
 
-  /** 연결 해제 이벤트 */
+  /** 연결이 끊긴 이벤트 (수동 disconnect + 예기치 않은 끊김 모두) */
   public get disconnect$(): Observable<void> {
     return this.#disconnectSubject.asObservable();
   }
@@ -58,65 +111,196 @@ export abstract class WebSocketController<TMessage = string> extends AbstractCon
     return this.#messageSubject.asObservable();
   }
 
+  /** 재시도 1회마다 emit (대기 시작 시점) */
+  public get reconnectAttempt$(): Observable<ReconnectInfo> {
+    return this.#reconnectAttemptSubject.asObservable();
+  }
+
+  /** 최대 재시도 횟수 소진. 이후 상태는 CLOSED. */
+  public get maxReconnectReached$(): Observable<void> {
+    return this.#maxReconnectReachedSubject.asObservable();
+  }
+
   /** 현재 연결 상태 값 (동기 조회). */
   public get connectionState(): ConnectionState {
     return this.#connectionState$.value;
   }
 
+  /** 현재 재연결 정보 (동기 조회). */
+  public get reconnectInfo(): ReconnectInfo {
+    return {
+      attempts: this.#reconnectAttempts,
+      maxAttempts: this.#reconnect.maxAttempts,
+      isReconnecting: this.connectionState === ConnectionState.RECONNECTING,
+    };
+  }
+
+  // ============================================
+  // Connection Lifecycle
+  // ============================================
+
   /**
    * 프로토콜별 Adapter 생성. 각 서브클래스(Stomp/Window/Mqtt)가 자기 Adapter를 만든다.
    * 연결 옵션은 각 서브클래스 생성자에서 이미 받아 저장해뒀으므로 여기선 인자가 없다.
-   * 구조 관계: Client -> Controller -> Adapter. Controller만 Adapter의 구체 클래스를 안다.
+   * Controller만 Adapter의 구체 클래스를 안다.
    */
   protected abstract createAdapter(): IWebSocketClientAdapter<unknown, TMessage>;
 
+  /**
+   * 연결 시작. IDLE 또는 CLOSED(재시도 소진 후) 에서만 동작하고, 그 외 상태면 무시한다.
+   * 첫 시도 실패 시 ReconnectConfig 대로 재시도하고, 전부 실패하면 CLOSED 로 가며 reject 한다.
+   * 재시도 도중 disconnect() 가 불리면 조용히 resolve 한다 (에러 아님).
+   */
   public async connect(): Promise<void> {
-    // 이미 연결 중이거나 연결된 상태면 재호출 무시 (adapter.connect() 중복 실행 방지)
-    if (this.connectionState !== ConnectionState.IDLE) {
+    const state = this.connectionState;
+    if (state !== ConnectionState.IDLE && state !== ConnectionState.CLOSED) {
       return;
     }
 
-    this.#connectionState$.next(ConnectionState.CONNECTING);
-    try {
-      this.adapter ??= this.createAdapter();
-      this.adapter.onMessage((data) => this.#messageSubject.next(data));
-      this.adapter.onError(async (error) => {
-        this.#errorSubject.next(error);
-        await this.dispatchError(error);
-      });
+    const adapter = this.#ensureAdapter();
+    this.#setState(ConnectionState.CONNECTING);
+    await this.dispatch("onBeforeConnect");
 
-      await this.dispatch("onBeforeConnect");
-      await this.adapter.connect();
-      this.#connectionState$.next(ConnectionState.OPEN);
-      this.#connectSubject.next();
-      await this.dispatch("onAfterConnect");
-    } catch (error) {
-      // 실패 시 IDLE로 되돌려서 다음 connect() 재시도를 막지 않는다.
-      this.#connectionState$.next(ConnectionState.IDLE);
-      const normalizedError = error instanceof Error ? error : new Error(String(error));
-      this.#errorSubject.next(normalizedError);
-      await this.dispatchError(normalizedError);
+    const error = await this.#establish(adapter);
+    if (error) {
       throw error;
     }
   }
 
+  /**
+   * 연결 종료. 진행 중인 재시도도 끊는다. IDLE/CLOSED/CLOSING 이면 무시.
+   */
   public async disconnect(): Promise<void> {
-    if (this.connectionState !== ConnectionState.OPEN || !this.adapter) {
+    const state = this.connectionState;
+    if (
+      state === ConnectionState.IDLE ||
+      state === ConnectionState.CLOSED ||
+      state === ConnectionState.CLOSING
+    ) {
       return;
     }
-    await this.dispatch("onBeforeDisconnect");
-    this.adapter.disconnect();
-    this.#connectionState$.next(ConnectionState.IDLE);
+
+    // 진행 중인 재시도 루프 중단 (CONNECTING/RECONNECTING 이었을 때)
+    this.#stopReconnect$.next();
+
+    const wasOpen = state === ConnectionState.OPEN;
+    this.#setState(ConnectionState.CLOSING);
+    if (wasOpen) {
+      await this.dispatch("onBeforeDisconnect");
+    }
+
+    await this.adapter?.disconnect();
+    this.#reconnectAttempts = 0;
+    this.#setState(ConnectionState.IDLE);
     this.#disconnectSubject.next();
-    await this.dispatch("onAfterDisconnect");
+
+    if (wasOpen) {
+      await this.dispatch("onAfterDisconnect");
+    }
   }
 
   public destroy?(): void {
     throw new Error("Method not implemented.");
   }
 
-  // TODO: 재연결 로직(백오프, 재시도 횟수) 붙을 때 reconnectAttempt$ / maxReconnectReached$ 추가
-  // — 지금은 재연결 자체가 구현 안 돼 있어서 Subject만 먼저 만들면 아무도 .next()를 안 부르는 죽은 스트림이 된다.
+  /** Adapter 는 한 번만 만들고, 콜백도 그때 한 번만 건다 (connect() 재호출 시 중복 등록 방지). */
+  #ensureAdapter(): IWebSocketClientAdapter<unknown, TMessage> {
+    if (this.adapter) {
+      return this.adapter;
+    }
+    const adapter = this.createAdapter();
+    adapter.onMessage((data) => this.#messageSubject.next(data));
+    adapter.onError((error) => {
+      void this.#emitError(error);
+    });
+    adapter.onClose(() => {
+      void this.#handleUnexpectedClose();
+    });
+    this.adapter = adapter;
+    return adapter;
+  }
+
+  /**
+   * 재시도 포함 연결 확립. 성공하면 OPEN + connect$ + onAfterConnect 까지 처리하고 undefined 반환.
+   * 재시도 소진이면 CLOSED + maxReconnectReached$ + error$ 처리 후 그 에러를 반환.
+   * disconnect() 로 중단됐으면 상태를 건드리지 않고 undefined 반환 (disconnect() 가 상태를 IDLE 로 마무리한다).
+   */
+  async #establish(
+    adapter: IWebSocketClientAdapter<unknown, TMessage>,
+  ): Promise<Error | undefined> {
+    try {
+      await this.#connectWithRetry(adapter);
+    } catch (error) {
+      if (error instanceof ReconnectAbortedError) {
+        return undefined;
+      }
+      const failure = toError(error);
+      this.#setState(ConnectionState.CLOSED);
+      this.#maxReconnectReachedSubject.next();
+      await this.#emitError(failure);
+      return failure;
+    }
+
+    this.#reconnectAttempts = 0;
+    this.#setState(ConnectionState.OPEN);
+    this.#connectSubject.next();
+    await this.dispatch("onAfterConnect");
+    return undefined;
+  }
+
+  /**
+   * adapter.connect() 를 ReconnectConfig 대로 재시도한다.
+   * - maxAttempts 는 "첫 시도를 제외한" 재시도 횟수다 (총 시도 = 1 + maxAttempts).
+   * - 재시도 대기 시작 시 RECONNECTING 으로 바꾸고 reconnectAttempt$ 를 emit 한다.
+   * - disconnect() 가 #stopReconnect$ 를 쏘면 ReconnectAbortedError 로 빠져나온다.
+   */
+  async #connectWithRetry(adapter: IWebSocketClientAdapter<unknown, TMessage>): Promise<void> {
+    const attempt$ = defer(() => from(adapter.connect())).pipe(
+      retry({
+        count: this.#reconnect.maxAttempts,
+        delay: (_error, retryCount) => {
+          this.#reconnectAttempts = retryCount;
+          this.#setState(ConnectionState.RECONNECTING);
+          this.#reconnectAttemptSubject.next(this.reconnectInfo);
+          return timer(computeReconnectDelay(this.#reconnect, retryCount));
+        },
+      }),
+      takeUntil(this.#stopReconnect$),
+    );
+
+    try {
+      await firstValueFrom(attempt$);
+    } catch (error) {
+      // takeUntil 이 emit 전에 스트림을 닫으면 firstValueFrom 은 EmptyError 를 던진다 = disconnect() 로 중단됨
+      if (error instanceof EmptyError) {
+        throw new ReconnectAbortedError();
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * OPEN 상태에서 소켓이 끊기면 자동 재연결에 들어간다.
+   * CONNECTING/RECONNECTING 중의 close 는 재시도 루프가 이미 처리하므로 무시하고,
+   * CLOSING/IDLE 의 close 는 수동 disconnect 이므로 무시한다.
+   */
+  async #handleUnexpectedClose(): Promise<void> {
+    if (this.connectionState !== ConnectionState.OPEN || !this.adapter) {
+      return;
+    }
+    this.#setState(ConnectionState.RECONNECTING);
+    this.#disconnectSubject.next();
+    await this.#establish(this.adapter);
+  }
+
+  async #emitError(error: Error): Promise<void> {
+    this.#errorSubject.next(error);
+    await this.dispatchError(error);
+  }
+
+  #setState(next: ConnectionState): void {
+    this.#connectionState$.next(next);
+  }
 
   // ============================================
   // Plugin Management
@@ -184,21 +368,26 @@ export abstract class WebSocketController<TMessage = string> extends AbstractCon
 export class WindowWebSocketController extends WebSocketController<string> {
   public readonly name = "WindowWebSocketController";
 
-  // TODO: WindowWebSocketClientAdapter 구현되면 this.options로 실제 생성하도록 연결
-  constructor(_options: unknown) {
-    super();
+  constructor(private readonly options: WindowWebSocketClientOptions) {
+    super(options.reconnect);
+    for (const plugin of options.plugins ?? []) {
+      this.addPlugin(plugin);
+    }
   }
 
   protected createAdapter(): IWebSocketClientAdapter<unknown, string> {
-    throw new Error("Method not implemented.");
+    return new WindowWebSocketClientAdapter(this.options);
   }
 }
 
 export class StompWebSocketController extends WebSocketController<IMessage> {
   public readonly name = "StompWebSocketController";
 
-  constructor(private readonly options: StompConfig) {
-    super();
+  constructor(private readonly options: StompWebSocketClientOptions) {
+    super(options.reconnect);
+    for (const plugin of options.plugins ?? []) {
+      this.addPlugin(plugin);
+    }
   }
 
   protected createAdapter(): IWebSocketClientAdapter<unknown, IMessage> {
@@ -209,7 +398,7 @@ export class StompWebSocketController extends WebSocketController<IMessage> {
 export class MqttWebSocketController extends WebSocketController<string> {
   public readonly name = "MqttWebSocketController";
 
-  // TODO: MqttWebSocketClientAdapter 구현되면 this.options로 실제 생성하도록 연결
+  // TODO: MqttWebSocketClientAdapter 구현되면 options 타입 정의 + createAdapter 연결
   constructor(_options: unknown) {
     super();
   }
@@ -217,15 +406,4 @@ export class MqttWebSocketController extends WebSocketController<string> {
   protected createAdapter(): IWebSocketClientAdapter<unknown, string> {
     throw new Error("Method not implemented.");
   }
-}
-
-export type ReconnectConfig = {
-  maxReconnectAttempts: number;
-  reconnectDelay: number;
-};
-
-export interface ReconnectInfo {
-  attempts: number;
-  maxAttempts: number;
-  isReconnecting: boolean;
 }

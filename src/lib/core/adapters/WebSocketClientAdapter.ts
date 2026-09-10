@@ -1,0 +1,39 @@
+/**
+ * Adapter 계층 공통 계약.
+ *
+ * 구조 관계: Client -> Controller -> Adapter.
+ * Adapter는 외부 라이브러리(브라우저 WebSocket, @stomp/stompjs, mqtt.js)를 아는 유일한 계층이다.
+ * 재연결 정책과 연결 상태는 Controller가 소유하므로 Adapter는 "한 번 연결 시도"만 책임진다 —
+ * connect()는 성공 시 resolve, 실패 시 reject 하고 스스로 재시도하지 않는다.
+ */
+
+export type SendArgs<TSend> = TSend extends undefined ? [] : [options: TSend];
+
+export interface IWebSocketClientAdapter<TSend = undefined, TMessage = string> {
+  /** 단일 연결 시도. 성공하면 resolve, 실패하면 reject. 재시도는 Controller 몫. */
+  connect(): Promise<void>;
+  /** 연결 종료. 종료 완료 후 resolve. */
+  disconnect(): Promise<void>;
+  send(data: string, ...args: SendArgs<TSend>): void;
+  onMessage(callback: (data: TMessage) => void): void;
+  onError(callback: (error: Error) => void): void;
+  /** 소켓이 닫혔을 때 (수동/비수동 구분 없음 — 판단은 Controller 상태로) */
+  onClose(callback: () => void): void;
+  onConnect(callback: () => void): void;
+}
+
+export abstract class WebSocketClientAdapter<T, C, TMessage = string>
+  implements IWebSocketClientAdapter<T, TMessage>
+{
+  protected client?: T;
+
+  public abstract connect(config?: C): Promise<void>;
+  public abstract disconnect(): Promise<void>;
+  public abstract send(): void;
+  public abstract onMessage(callback: (data: TMessage) => void): void;
+  public abstract onError(callback: (error: Error) => void): void;
+  public abstract onClose(callback: () => void): void;
+  public abstract onConnect(callback: () => void): void;
+  /** 어댑터 내장 상태값 (브라우저 readyState / StompSocketState 등). Controller의 ConnectionState와 별개. */
+  public abstract networkStatus(): number;
+}
