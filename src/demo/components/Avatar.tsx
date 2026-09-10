@@ -1,4 +1,4 @@
-import type { ChatUser } from '../types'
+import type { ChatUser } from "../types"
 
 interface AvatarProps {
   user: ChatUser

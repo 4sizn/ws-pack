@@ -1,4 +1,4 @@
-export type MessageStatus = 'sending' | 'sent' | 'failed'
+export type MessageStatus = "sending" | "sent" | "failed"
 
 export interface ChatUser {
   id: string
@@ -21,7 +21,7 @@ export interface ChatMessage {
   status: MessageStatus
 }
 
-export type ConnectionState = 'connecting' | 'connected' | 'disconnected'
+export type ConnectionState = "connecting" | "connected" | "disconnected"
 
 export interface ChatRoom {
   id: string

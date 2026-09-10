@@ -1,9 +1,9 @@
-import type { ConnectionState } from '../types'
+import type { ConnectionState } from "../types"
 
 const stateLabel: Record<ConnectionState, string> = {
-  connected: '연결됨',
-  connecting: '연결 중',
-  disconnected: '연결 끊김',
+  connected: "연결됨",
+  connecting: "연결 중",
+  disconnected: "연결 끊김",
 }
 
 interface ChatHeaderProps {

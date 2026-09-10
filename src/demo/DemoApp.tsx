@@ -1,6 +1,6 @@
-import { ChatRoom } from './components/ChatRoom'
-import { mockRooms } from './data/mockRooms'
-import './styles/chat.css'
+import { ChatRoom } from "./components/ChatRoom"
+import { mockRooms } from "./data/mockRooms"
+import "./styles/chat.css"
 
 export function DemoApp() {
   return (
