@@ -1,7 +1,12 @@
 import { describe, expect, it } from "bun:test";
 import { firstValueFrom, take, toArray } from "rxjs";
 import type { DisconnectInfo } from "../../src/lib";
-import { ConnectionState, ReconnectTimeMode, WebSocketMonitorPlugin } from "../../src/lib";
+import {
+  AbstractPlugin,
+  ConnectionState,
+  ReconnectTimeMode,
+  WebSocketMonitorPlugin,
+} from "../../src/lib";
 import { delay, waitFor } from "../support/async";
 import { FakeAdapter, FakeController } from "../support/fake-adapter";
 
@@ -194,7 +199,96 @@ describe("송수신", () => {
   });
 });
 
+describe("인스턴스 폐기", () => {
+  it("destroy() 는 연결을 놓고 스트림을 완료한다", async () => {
+    const { adapter, controller } = setup();
+    await controller.connect();
+
+    let completed = false;
+    controller.message$.subscribe({
+      complete: () => {
+        completed = true;
+      },
+    });
+
+    controller.destroy();
+
+    expect(controller.destroyed).toBe(true);
+    expect(adapter.signals[0].aborted).toBe(true);
+    expect(adapter.connected).toBe(false);
+    expect(completed).toBe(true);
+  });
+
+  it("폐기 후에는 연결도 전송도 받지 않는다", async () => {
+    const { controller } = setup();
+    await controller.connect();
+    controller.destroy();
+
+    await expect(controller.connect()).rejects.toThrow(/destroyed/);
+    expect(() => controller.send("폐기 후")).toThrow(/destroyed/);
+    // 종료는 이미 끝난 일이라 조용히 통과한다
+    await controller.disconnect();
+  });
+
+  it("두 번 폐기해도 안전하다", async () => {
+    const { adapter, controller } = setup();
+    await controller.connect();
+
+    controller.destroy();
+    controller.destroy();
+
+    expect(adapter.releases).toBe(1);
+  });
+
+  it("폐기하면 플러그인도 뗀다", async () => {
+    const { controller } = setup();
+    let detached = 0;
+    controller.addPlugin(
+      new WebSocketMonitorPlugin({
+        onDetach: () => {
+          detached += 1;
+        },
+      }),
+    );
+
+    controller.destroy();
+
+    expect(detached).toBe(1);
+    expect(controller.getPluginNames()).toEqual([]);
+  });
+});
+
 describe("플러그인 훅", () => {
+  it("모니터 플러그인이 아니어도 훅을 받는다 — 확장점이 특정 클래스에 묶이지 않는다", async () => {
+    const { controller } = setup();
+    const seen: string[] = [];
+
+    class RecordingPlugin extends AbstractPlugin {
+      public readonly name = "RecordingPlugin";
+      protected onAttach(): void {
+        seen.push("attach");
+      }
+      protected onDetach(): void {
+        seen.push("detach");
+      }
+      public onBeforeConnect = () => {
+        seen.push("before-connect");
+      };
+      public onAfterConnect = () => {
+        seen.push("after-connect");
+      };
+      public onError = (error: Error) => {
+        seen.push(`error:${error.message}`);
+      };
+    }
+
+    controller.addPlugin(new RecordingPlugin());
+    await controller.connect();
+    controller.destroy();
+
+    expect(seen).toEqual(["attach", "before-connect", "after-connect", "detach"]);
+  });
+
   it("onBeforeConnect 가 막으면 연결하지 않고 상태를 되돌린다", async () => {
     const { adapter, controller } = setup();
     controller.addPlugin(

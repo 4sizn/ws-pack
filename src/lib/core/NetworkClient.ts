@@ -38,4 +38,10 @@ export interface NetworkClient<TMessage, TSend = undefined> {
   readonly reconnectAttempt$: Observable<ReconnectInfo>;
   readonly maxReconnectReached$: Observable<void>;
   readonly reconnectInfo: ReconnectInfo;
+
+  /**
+   * 인스턴스 폐기. 연결을 놓고 스트림을 완료한다. 두 번 불러도 안전하다.
+   * 워커 경로에서는 손잡이를 놓는 것이고, 마지막 손잡이면 워커가 연결을 닫는다.
+   */
+  destroy(): void;
 }

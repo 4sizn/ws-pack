@@ -35,4 +35,4 @@ const tab = Math.random().toString(36).slice(2, 6);
 await client.send(`탭 ${tab} 이 보냄`);
 log(`전송: 탭 ${tab}`);
 
-window.addEventListener("beforeunload", () => client.dispose());
+window.addEventListener("beforeunload", () => client.destroy());

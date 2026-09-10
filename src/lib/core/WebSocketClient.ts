@@ -95,6 +95,14 @@ export class WebSocketClient<
   public get reconnectInfo(): ReconnectInfo {
     return this.controller.reconnectInfo;
   }
+
+  /**
+   * 인스턴스 폐기. 연결을 놓고 스트림을 완료한다. 컴포넌트 언마운트처럼 인스턴스를 버릴 때 부른다.
+   * 부르지 않으면 내부 구독과 플러그인이 계속 남는다.
+   */
+  public destroy(): void {
+    this.controller.destroy();
+  }
 }
 
 export class WindowWebSocketClient extends WebSocketClient<string> {
