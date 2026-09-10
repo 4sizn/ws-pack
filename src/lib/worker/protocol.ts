@@ -45,6 +45,8 @@ export type WorkerCommand =
   | { type: "connect"; handle: string; command: string }
   | { type: "disconnect"; handle: string; command: string }
   | { type: "send"; handle: string; command: string; data: string; options?: unknown }
+  /** 연결이 살아 있는지 워커에게 확인시킨다. 결과는 ack 의 alive 로 온다. */
+  | { type: "revalidate"; handle: string; command: string; timeoutMs?: number }
   | {
       type: "subscribe";
       handle: string;
@@ -57,7 +59,7 @@ export type WorkerCommand =
 /** 워커 → 페이지 */
 export type WorkerEvent =
   /** connect/disconnect/send 요청의 응답. 실패는 여기로만 온다. */
-  | { type: "ack"; handle: string; command: string; error?: string }
+  | { type: "ack"; handle: string; command: string; error?: string; alive?: boolean }
   | { type: "state"; handle: string; state: ConnectionState }
   | { type: "opened"; handle: string }
   | { type: "closed"; handle: string; info: DisconnectInfo }

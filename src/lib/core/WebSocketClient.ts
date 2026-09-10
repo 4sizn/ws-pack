@@ -97,6 +97,14 @@ export class WebSocketClient<
   }
 
   /**
+   * 지금 연결이 정말 살아 있는지 확인한다. 살아 있으면 true, 아니면 재연결을 시작하고 false.
+   * 포그라운드 복귀나 네트워크 전환 같은 신호를 받은 쪽에서 부른다.
+   */
+  public revalidate(timeoutMs?: number): Promise<boolean> {
+    return this.controller.revalidate(timeoutMs);
+  }
+
+  /**
    * 인스턴스 폐기. 연결을 놓고 스트림을 완료한다. 컴포넌트 언마운트처럼 인스턴스를 버릴 때 부른다.
    * 부르지 않으면 내부 구독과 플러그인이 계속 남는다.
    */

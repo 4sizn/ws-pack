@@ -40,6 +40,15 @@ export interface IWebSocketClientAdapter<TSend = undefined, TMessage = string> {
   /** 소켓이 닫혔을 때. 수동/비수동 구분은 Controller 가 자기 상태로 판단한다. */
   onClose(callback: (info: SocketCloseInfo) => void): void;
   onConnect(callback: () => void): void;
+  /**
+   * 지금 이 연결이 정말 살아 있는지 확인한다. `signal` 로 취소·시간 제한을 받는다.
+   *
+   * readyState 만 보는 것으로는 부족하다 — 모바일 웹뷰가 백그라운드에서 얼어붙거나 네트워크가
+   * 바뀌면 소켓은 OPEN 인 채 상대만 사라지고(close 이벤트도 오지 않고) 만다. 그래서 프로토콜이
+   * 왕복 확인 수단을 가지고 있으면 그걸로 확인하고, 없으면 확인할 수 있는 만큼만 확인한다.
+   * 무엇으로 확인했는지는 각 어댑터 문서에 적는다.
+   */
+  revalidate(signal: AbortSignal): Promise<boolean>;
 }
 
 /**
@@ -59,5 +68,6 @@ export abstract class WebSocketClientAdapter<T, C, TMessage = string, TSend = un
   public abstract onClose(callback: (info: SocketCloseInfo) => void): void;
   public abstract onConnect(callback: () => void): void;
   /** 어댑터 내장 상태값 (브라우저 readyState / StompSocketState 등). Controller의 ConnectionState와 별개. */
+  public abstract revalidate(signal: AbortSignal): Promise<boolean>;
   public abstract networkStatus(): number;
 }

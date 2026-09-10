@@ -1,3 +1,4 @@
+import { randomId } from "../../lib";
 import type { ChatMessage, ChatUser } from "../types";
 
 /** 방에 흘리는 메시지 포맷. body 는 이 JSON 의 문자열. */
@@ -11,7 +12,7 @@ export interface WirePayload {
 }
 
 export function buildPayload(clientId: string, sender: ChatUser, text: string): WirePayload {
-  return { id: crypto.randomUUID(), clientId, sender, text, sentAt: Date.now() };
+  return { id: randomId(), clientId, sender, text, sentAt: Date.now() };
 }
 
 const unknownSender: ChatUser = { id: "unknown", name: "알 수 없음", color: "#dfe4ea" };
@@ -24,7 +25,7 @@ export function toChatMessage(body: string, roomId: string, clientId: string): C
 
   if (!payload) {
     return {
-      id: `${roomId}-raw-${crypto.randomUUID()}`,
+      id: `${roomId}-raw-${randomId()}`,
       roomId,
       sender: unknownSender,
       mine: false,
@@ -54,7 +55,7 @@ function parse(body: string): WirePayload | null {
       return null;
     }
     return {
-      id: value.id ?? crypto.randomUUID(),
+      id: value.id ?? randomId(),
       clientId: value.clientId,
       sender: value.sender ?? unknownSender,
       text: value.text,

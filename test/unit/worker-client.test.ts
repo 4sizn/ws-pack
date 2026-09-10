@@ -40,6 +40,11 @@ class FakeHubClient implements HubClient {
     this.connectionState = ConnectionState.IDLE;
     this.connectionChanges$.next(ConnectionState.IDLE);
   }
+  liveness = true;
+  async revalidate(): Promise<boolean> {
+    return this.liveness;
+  }
+
   send(data: string): void {
     if (this.connectionState !== ConnectionState.OPEN) throw new Error("not connected");
     this.sent.push(data);
@@ -132,6 +137,18 @@ describe("워커 클라이언트 왕복", () => {
     session.worker.topic$.next({ body: "해제 후", destination: "/topic/x" });
     await delay(10);
     expect(received).toHaveLength(1);
+    close();
+  });
+
+  it("revalidate() 는 워커가 확인한 결과를 그대로 돌려준다", async () => {
+    const session = pair();
+    const { page, close } = session;
+    await page.connect();
+
+    expect(await page.revalidate()).toBe(true);
+
+    session.worker.liveness = false;
+    expect(await page.revalidate()).toBe(false);
     close();
   });
 

@@ -199,6 +199,47 @@ describe("송수신", () => {
   });
 });
 
+describe("연결 재검증", () => {
+  it("살아 있으면 true 를 주고 연결을 건드리지 않는다", async () => {
+    const { adapter, controller } = setup();
+    await controller.connect();
+
+    expect(await controller.revalidate()).toBe(true);
+    expect(adapter.revalidations).toBe(1);
+    expect(controller.connectionState).toBe(ConnectionState.OPEN);
+    expect(adapter.attempts).toBe(1);
+  });
+
+  it("죽어 있으면 false 를 주고 소켓이 닫힌 것과 같은 경로로 재연결한다", async () => {
+    const { adapter, controller } = setup();
+    await controller.connect();
+    adapter.liveness = false;
+
+    expect(await controller.revalidate()).toBe(false);
+
+    adapter.liveness = true;
+    await waitFor(() => adapter.attempts === 2, "재연결 시도", 500);
+    await waitFor(() => controller.connectionState === ConnectionState.OPEN, "재연결 완료", 500);
+  });
+
+  it("응답이 없으면 제한 시간까지만 기다리고 죽은 것으로 본다", async () => {
+    const { adapter, controller } = setup();
+    await controller.connect();
+    adapter.liveness = "hang";
+
+    const started = Date.now();
+    expect(await controller.revalidate(50)).toBe(false);
+    expect(Date.now() - started).toBeLessThan(500);
+  });
+
+  it("연결돼 있지 않으면 어댑터에 묻지도 않는다", async () => {
+    const { adapter, controller } = setup();
+
+    expect(await controller.revalidate()).toBe(false);
+    expect(adapter.revalidations).toBe(0);
+  });
+});
+
 describe("인스턴스 폐기", () => {
   it("destroy() 는 연결을 놓고 스트림을 완료한다", async () => {
     const { adapter, controller } = setup();

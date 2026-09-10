@@ -40,6 +40,11 @@ class FakeHubClient implements HubClient {
     this.connectionState = ConnectionState.IDLE;
     this.connectionChanges$.next(ConnectionState.IDLE);
   }
+  liveness = true;
+  async revalidate(): Promise<boolean> {
+    return this.liveness;
+  }
+
   send(data: string): void {
     if (this.connectionState !== ConnectionState.OPEN) throw new Error("not connected");
     this.sent.push(data);

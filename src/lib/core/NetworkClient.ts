@@ -40,6 +40,12 @@ export interface NetworkClient<TMessage, TSend = undefined> {
   readonly reconnectInfo: ReconnectInfo;
 
   /**
+   * 연결이 정말 살아 있는지 확인한다. 죽었으면 재연결을 시작하고 false 를 준다.
+   * 언제 부를지는 앱이 정한다 — 신호원(포그라운드 복귀, 네트워크 전환)이 환경마다 다르기 때문이다.
+   */
+  revalidate(timeoutMs?: number): Promise<boolean>;
+
+  /**
    * 인스턴스 폐기. 연결을 놓고 스트림을 완료한다. 두 번 불러도 안전하다.
    * 워커 경로에서는 손잡이를 놓는 것이고, 마지막 손잡이면 워커가 연결을 닫는다.
    */

@@ -269,6 +269,35 @@ export class MqttWebSocketClientAdapter
     this.#closeCallbacks.add(callback);
   }
 
+  /**
+   * QoS 1 발행의 PUBACK 왕복으로 확인한다. 브로커가 받았다는 응답이 와야만 성립하므로
+   * 소켓이 살아 있고 상대가 응답한다는 증거가 된다.
+   *
+   * 토픽은 이 클라이언트 전용 이름을 쓰고 아무도 구독하지 않는다 — 확인 때문에 남에게
+   * 메시지가 가면 안 된다. 응답이 신호 기한 안에 오지 않으면 죽은 것으로 본다.
+   */
+  public async revalidate(signal: AbortSignal): Promise<boolean> {
+    const client = this.client;
+    if (!client?.connected) return false;
+
+    return new Promise<boolean>((resolve) => {
+      let settled = false;
+      const settle = (alive: boolean) => {
+        if (settled) return;
+        settled = true;
+        resolve(alive);
+      };
+
+      onAbort(signal, () => settle(false));
+      client.publish(
+        `revalidate/${client.options.clientId}`,
+        "",
+        { qos: 1, retain: false },
+        (error) => settle(!error),
+      );
+    });
+  }
+
   /** MQTT.js 는 readyState 를 노출하지 않는다. 연결 여부만 브라우저 readyState 값으로 옮겨 준다. */
   public networkStatus(): number {
     return this.client?.connected ? 1 : 3;

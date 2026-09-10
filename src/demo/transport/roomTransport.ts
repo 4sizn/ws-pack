@@ -1,6 +1,12 @@
 import type { Observable } from "rxjs";
 import { map, merge, Subject } from "rxjs";
-import type { ConnectionState, DisconnectInfo, ReconnectInfo, WorkerClientConfig } from "../../lib";
+import type {
+  ConnectionState,
+  DisconnectInfo,
+  ReconnectInfo,
+  WorkerClientConfig,
+  WorkerMode,
+} from "../../lib";
 import {
   MqttWebSocketClient,
   ReconnectTimeMode,
@@ -13,12 +19,12 @@ import {
 export type Protocol = "stomp" | "window" | "mqtt";
 
 /**
- * 연결을 어디서 들고 있을지.
- * - direct: 페이지(메인 스레드)가 소켓을 소유한다.
- * - worker: 이 탭 전용 Worker 가 소유한다. 소켓 작업이 메인 스레드에서 빠지지만 탭마다 따로다.
+ * 연결을 어디서 들고 있을지. 플랫폼 용어를 그대로 쓴다.
+ * - main: 페이지(메인 스레드)가 소켓을 소유한다.
+ * - dedicated: 이 탭 전용 Worker 가 소유한다. 소켓 작업이 메인 스레드에서 빠지지만 탭마다 따로다.
  * - shared: SharedWorker 가 소유한다. 탭이 여러 개여도 같은 방이면 소켓 하나를 공유한다.
  */
-export type TransportMode = "direct" | "worker" | "shared";
+export type TransportMode = WorkerMode;
 
 /**
  * 방 하나에 붙는 연결. 프로토콜 차이를 여기서 흡수해서, 위 계층(RoomSession)은
@@ -36,16 +42,24 @@ export interface RoomTransport {
   readonly disconnect$: Observable<DisconnectInfo>;
   /** 화면에 보여줄 실제 접속 대상 (destination 또는 URL) */
   readonly address: string;
+  /** 연결이 살아 있는지 확인한다. 죽었으면 재연결이 시작되고 false 를 준다. */
+  revalidate(): Promise<boolean>;
   /** 세션이 폐기될 때 부른다. 워커 손잡이처럼 연결 종료와 별개로 놓아야 하는 자원이 있을 때 쓴다. */
   release?(): void;
 }
 
-/** 데모용 브로커/서버 주소. 기본값은 docker-compose.test.yml 의 RabbitMQ 와 `bun run ws:server`. */
-const brokerURL = import.meta.env.VITE_STOMP_URL ?? "ws://127.0.0.1:15674/ws";
+/**
+ * 데모용 브로커/서버 주소.
+ *
+ * 기본 호스트를 페이지 주소에서 가져온다 — 다른 기기(폰)에서 열면 127.0.0.1 은 그 기기 자신을
+ * 가리켜서 아무 데도 못 붙는다. 페이지를 준 호스트가 서버도 주고 있다고 보는 게 맞다.
+ */
+const host = typeof location === "undefined" ? "127.0.0.1" : location.hostname || "127.0.0.1";
+const brokerURL = import.meta.env.VITE_STOMP_URL ?? `ws://${host}:15674/ws`;
 const login = import.meta.env.VITE_STOMP_LOGIN ?? "test";
 const passcode = import.meta.env.VITE_STOMP_PASSCODE ?? "test";
-const echoURL = import.meta.env.VITE_WS_URL ?? "ws://127.0.0.1:8010";
-const mqttURL = import.meta.env.VITE_MQTT_URL ?? "ws://127.0.0.1:8011";
+const echoURL = import.meta.env.VITE_WS_URL ?? `ws://${host}:8010`;
+const mqttURL = import.meta.env.VITE_MQTT_URL ?? `ws://${host}:8011`;
 
 const reconnect = {
   maxAttempts: 5,
@@ -64,9 +78,9 @@ const reconnect = {
 export function createRoomTransport(
   protocol: Protocol,
   room: string,
-  mode: TransportMode = "direct",
+  mode: TransportMode = "main",
 ): RoomTransport {
-  if (mode !== "direct") {
+  if (mode !== "main") {
     return workerTransport(protocol, room, mode);
   }
   switch (protocol) {
@@ -109,6 +123,7 @@ function stompTransport(room: string): RoomTransport {
     error$: client.error$,
     disconnect$: client.disconnect$,
     address: destination,
+    revalidate: () => client.revalidate(),
     release: () => client.destroy(),
   };
 }
@@ -128,6 +143,7 @@ function windowTransport(room: string): RoomTransport {
     error$: client.error$,
     disconnect$: client.disconnect$,
     address: url,
+    revalidate: () => client.revalidate(),
     release: () => client.destroy(),
   };
 }
@@ -146,6 +162,7 @@ function mqttTransport(room: string): RoomTransport {
     error$: client.error$,
     disconnect$: client.disconnect$,
     address: roomAddress("mqtt", room),
+    revalidate: () => client.revalidate(),
     release: () => client.destroy(),
   };
 }
@@ -176,7 +193,7 @@ const workerURL = new URL("../../lib/worker/socket-worker.ts", import.meta.url);
 let dedicated: Worker | undefined;
 let shared: SharedWorker | undefined;
 
-function workerFor(mode: Exclude<TransportMode, "direct">): Worker | SharedWorker {
+function workerFor(mode: Exclude<TransportMode, "main">): Worker | SharedWorker {
   if (mode === "shared") {
     shared ??= new SharedWorker(workerURL, { type: "module", name: "ws-pack-demo" });
     return shared;
@@ -188,7 +205,7 @@ function workerFor(mode: Exclude<TransportMode, "direct">): Worker | SharedWorke
 function workerTransport(
   protocol: Protocol,
   room: string,
-  mode: Exclude<TransportMode, "direct">,
+  mode: Exclude<TransportMode, "main">,
 ): RoomTransport {
   const config = workerConfig(protocol, room);
   const client = new WorkerWebSocketClient(workerFor(mode), config, {
@@ -215,6 +232,7 @@ function workerTransport(
     error$: merge(client.error$, sendErrors),
     disconnect$: client.disconnect$,
     address: roomAddress(protocol, room),
+    revalidate: () => client.revalidate(),
     release: () => client.destroy(),
   };
 }

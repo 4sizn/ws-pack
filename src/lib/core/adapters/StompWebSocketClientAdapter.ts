@@ -85,6 +85,9 @@ export class StompWebSocketClientAdapter
 
   readonly #subscriptions = new Set<SubscriptionRecord>();
 
+  /** revalidate 용 receipt 일련번호 */
+  #receipts = 0;
+
   constructor(options: StompWebSocketClientOptions) {
     super();
     this.#options = options;
@@ -289,6 +292,38 @@ export class StompWebSocketClientAdapter
 
   public onClose(callback: (info: SocketCloseInfo) => void): void {
     this.#closeCallbacks.add(callback);
+  }
+
+  /**
+   * RECEIPT 왕복으로 확인한다. STOMP 는 어느 프레임에나 `receipt` 헤더를 붙일 수 있고,
+   * 서버는 처리 후 RECEIPT 를 돌려준다 — 소켓이 살아 있고 상대가 응답한다는 증거다.
+   *
+   * 실재하지 않는 구독을 해제하는 프레임을 쓰는 이유: 아무 데도 메시지를 뿌리지 않기 때문이다.
+   * 응답이 신호 기한 안에 오지 않으면 죽은 것으로 본다.
+   */
+  public async revalidate(signal: AbortSignal): Promise<boolean> {
+    const client = this.client;
+    if (!client?.connected || client.webSocket?.readyState !== StompSocketState.OPEN) {
+      return false;
+    }
+
+    const receipt = `revalidate-${++this.#receipts}`;
+    return new Promise<boolean>((resolve) => {
+      let settled = false;
+      const settle = (alive: boolean) => {
+        if (settled) return;
+        settled = true;
+        resolve(alive);
+      };
+
+      onAbort(signal, () => settle(false));
+      client.watchForReceipt(receipt, () => settle(true));
+      try {
+        client.unsubscribe(`${receipt}-none`, { receipt });
+      } catch {
+        settle(false);
+      }
+    });
   }
 
   /** stompjs 소켓의 readyState (StompSocketState). 소켓이 없으면 CLOSED. */
