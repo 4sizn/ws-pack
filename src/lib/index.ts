@@ -1,6 +1,7 @@
 export { ConnectionState } from "./core/ConnectionState";
 export { StompStompError } from "./core/errors/StompStompError";
 export { StompWebsocketError } from "./core/errors/StompWebsocketError";
+export type { PubSubAble } from "./core/PubSubAble";
 export {
   type Logger,
   LoggingPlugin,

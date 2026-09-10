@@ -11,6 +11,7 @@ import {
 import { Observable, type Subscriber } from "rxjs";
 import { StompStompError } from "../errors/StompStompError";
 import { StompWebsocketError } from "../errors/StompWebsocketError";
+import type { PubSubAble } from "../PubSubAble";
 import type { AbstractPlugin, Logger } from "../plugins/AbstractPlugin";
 import type { ReconnectConfig } from "../Reconnect";
 import { WebSocketClientAdapter } from "./WebSocketClientAdapter";
@@ -60,12 +61,15 @@ interface SubscriptionRecord {
  *
  * subscribe(destination) 로 만든 구독은 어댑터가 기억해서, 재연결 후 CONNECTED 가 오면 자동으로 다시 건다.
  */
-export class StompWebSocketClientAdapter extends WebSocketClientAdapter<
-  StompClient,
-  StompWebSocketClientOptions,
-  IMessage,
-  StompSendOptions
-> {
+export class StompWebSocketClientAdapter
+  extends WebSocketClientAdapter<
+    StompClient,
+    StompWebSocketClientOptions,
+    IMessage,
+    StompSendOptions
+  >
+  implements PubSubAble<IMessage, StompHeaders>
+{
   readonly #options: StompWebSocketClientOptions;
 
   readonly #connectCallbacks = new Set<() => void>();

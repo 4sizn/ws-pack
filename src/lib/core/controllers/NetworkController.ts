@@ -24,6 +24,7 @@ import {
   type WindowWebSocketClientOptions,
 } from "../adapters/WindowWebSocketClientAdapter";
 import { ConnectionState } from "../ConnectionState";
+import type { PubSubAble } from "../PubSubAble";
 import type { AbstractPlugin } from "../plugins/AbstractPlugin";
 import { WebSocketMonitorPlugin } from "../plugins/AbstractPlugin";
 import {
@@ -427,11 +428,10 @@ export class WindowWebSocketController extends WebSocketController<string> {
   }
 }
 
-export class StompWebSocketController extends WebSocketController<
-  IMessage,
-  StompSendOptions,
-  StompWebSocketClientAdapter
-> {
+export class StompWebSocketController
+  extends WebSocketController<IMessage, StompSendOptions, StompWebSocketClientAdapter>
+  implements PubSubAble<IMessage, StompHeaders>
+{
   public readonly name = "StompWebSocketController";
 
   constructor(private readonly options: StompWebSocketClientOptions) {

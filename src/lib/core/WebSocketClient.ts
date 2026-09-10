@@ -13,6 +13,7 @@ import {
   StompWebSocketController,
   WindowWebSocketController,
 } from "./controllers/NetworkController";
+import type { PubSubAble } from "./PubSubAble";
 import type { ReconnectInfo } from "./Reconnect";
 
 /**
@@ -93,11 +94,10 @@ export class WindowWebSocketClient extends WebSocketClient<string> {
   }
 }
 
-export class StompWebSocketClient extends WebSocketClient<
-  IMessage,
-  StompSendOptions,
-  StompWebSocketController
-> {
+export class StompWebSocketClient
+  extends WebSocketClient<IMessage, StompSendOptions, StompWebSocketController>
+  implements PubSubAble<IMessage, StompHeaders>
+{
   constructor(options: StompWebSocketClientOptions) {
     super(new StompWebSocketController(options));
   }
