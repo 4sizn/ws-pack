@@ -1,7 +1,8 @@
 import { useState } from "react";
+import { supportedWorkerModes } from "../lib";
 import { ChatRoom } from "./components/ChatRoom";
 import { mockRooms } from "./data/mockRooms";
-import type { Protocol, TransportMode } from "./transport/roomTransport";
+import { type Protocol, serverAddress, type TransportMode } from "./transport/roomTransport";
 import type { ChatUser } from "./types";
 import "./styles/chat.css";
 
@@ -21,10 +22,11 @@ const protocolLabel: Record<Protocol, string> = {
   mqtt: "MQTT",
 };
 
+/** 힌트는 실제 접속 주소를 그대로 보여준다 — 다른 기기에서 열면 127.0.0.1 이 아니다. */
 const protocolHint: Record<Protocol, string> = {
-  stomp: "RabbitMQ web-stomp (ws://127.0.0.1:15674/ws) — bun run stomp:up",
-  window: "순수 WebSocket 에코 서버 (ws://127.0.0.1:8010) — bun run ws:server",
-  mqtt: "aedes MQTT 브로커 (ws://127.0.0.1:8011) — bun run mqtt:server",
+  stomp: `RabbitMQ web-stomp (${serverAddress("stomp")}) — bun run stomp:up`,
+  window: `순수 WebSocket 에코 서버 (${serverAddress("window")}) — bun run ws:server`,
+  mqtt: `aedes MQTT 브로커 (${serverAddress("mqtt")}) — bun run mqtt:server`,
 };
 
 /**
@@ -33,20 +35,22 @@ const protocolHint: Record<Protocol, string> = {
  * - 방 배치: 분리하면 서로 안 보이고, 합치면 세 방 모두에 도착해야 한다.
  */
 const modeLabel: Record<TransportMode, string> = {
-  direct: "직접 연결",
-  worker: "Worker",
+  main: "메인 스레드",
+  dedicated: "Worker",
   shared: "SharedWorker",
 };
 
 const modeHint: Record<TransportMode, string> = {
-  direct: "페이지(메인 스레드)가 소켓을 소유한다. 탭마다 연결이 따로 생긴다.",
-  worker: "이 탭 전용 Worker 가 소유한다. 소켓 작업이 메인 스레드에서 빠지지만 탭마다 따로다.",
+  main: "페이지(메인 스레드)가 소켓을 소유한다. 탭마다 연결이 따로 생긴다.",
+  dedicated: "이 탭 전용 Worker 가 소유한다. 소켓 작업이 메인 스레드에서 빠지지만 탭마다 따로다.",
   shared: "SharedWorker 가 소유한다. 탭을 여러 개 열어도 같은 방이면 소켓은 하나다.",
 };
 
 export function DemoApp() {
   const [protocol, setProtocol] = useState<Protocol>("stomp");
-  const [mode, setMode] = useState<TransportMode>("direct");
+  // 이 기기에서 쓸 수 있는 모드만 고를 수 있게 한다. SharedWorker 가 없는 브라우저가 있다.
+  const available = supportedWorkerModes();
+  const [mode, setMode] = useState<TransportMode>(available[0]);
   const [rooms, setRooms] = useState<Rooms>(separated);
   const isShared = mockRooms.every((room) => rooms[room.id] === SHARED_ROOM);
 
@@ -77,11 +81,13 @@ export function DemoApp() {
         </div>
 
         <div className="topic-switch">
-          {(["direct", "worker", "shared"] as const).map((value) => (
+          {(["shared", "dedicated", "main"] as const).map((value) => (
             <button
               key={value}
               type="button"
               className={`topic-switch__button${mode === value ? " topic-switch__button--active" : ""}`}
+              disabled={!available.includes(value)}
+              title={available.includes(value) ? undefined : "이 기기에서는 쓸 수 없다"}
               onClick={() => setMode(value)}
             >
               {modeLabel[value]}

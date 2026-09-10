@@ -24,6 +24,7 @@ export {
 } from "./core/plugins/AbstractPlugin";
 export type { ReconnectConfig, ReconnectInfo } from "./core/Reconnect";
 export { ReconnectTimeMode } from "./core/Reconnect";
+export { randomId } from "./core/randomId";
 export type {
   MqttMessage,
   MqttSendOptions,
@@ -42,15 +43,20 @@ export {
 
 // 워커 기반 사용 — 소비자가 new Worker / new SharedWorker 로 만든 워커에 붙인다.
 export {
+  type CreateWorkerClientOptions,
+  createWorkerClient,
   defaultClientFactory,
   type HubClient,
   type HubClientFactory,
   type MessageLike,
+  supportedWorkerModes,
   type WireMessage,
   type WorkerClientConfig,
+  type WorkerClientSelection,
   type WorkerCommand,
   type WorkerEvent,
   WorkerHub,
+  type WorkerMode,
   WorkerWebSocketClient,
   type WorkerWebSocketClientOptions,
 } from "./worker";

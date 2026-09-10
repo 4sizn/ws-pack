@@ -40,6 +40,14 @@ export interface StompWebSocketClientOptions extends Omit<StompConfig, ManagedSt
   client?: StompClient;
   /** 재연결 정책 (Controller가 소비) */
   reconnect?: ReconnectConfig;
+  /**
+   * revalidate() 가 왕복 확인에 쓸 destination.
+   *
+   * 아무도 구독하지 않는 이름을 주면 된다 — 여기에 잠깐 SUBSCRIBE 하고 RECEIPT 를 받은 뒤 바로
+   * 해제한다. 브로커마다 유효한 destination 규칙이 달라서(RabbitMQ `/topic/...`, ActiveMQ `/queue/...`)
+   * 라이브러리가 임의로 정하지 않는다. 없으면 소켓이 닫혔는지까지만 확인한다.
+   */
+  revalidateDestination?: string;
   logger?: Logger;
   plugins?: AbstractPlugin[];
 }
@@ -84,6 +92,9 @@ export class StompWebSocketClientAdapter
   readonly #closeCallbacks = new Set<(info: SocketCloseInfo) => void>();
 
   readonly #subscriptions = new Set<SubscriptionRecord>();
+
+  /** revalidate 용 receipt 일련번호 */
+  #receipts = 0;
 
   constructor(options: StompWebSocketClientOptions) {
     super();
@@ -289,6 +300,52 @@ export class StompWebSocketClientAdapter
 
   public onClose(callback: (info: SocketCloseInfo) => void): void {
     this.#closeCallbacks.add(callback);
+  }
+
+  /**
+   * RECEIPT 왕복으로 확인한다. 서버가 프레임을 처리하고 RECEIPT 를 돌려줘야만 성립하므로,
+   * 소켓이 살아 있고 상대가 응답한다는 증거가 된다.
+   *
+   * 잠깐 SUBSCRIBE 했다가 바로 해제하는 방식을 쓴다. 처음엔 존재하지 않는 구독의 UNSUBSCRIBE 로
+   * 확인하려 했지만, 브로커는 모르는 id 에 RECEIPT 를 주지 않는다 — 기기 점검에서 그대로 드러났다.
+   *
+   * `revalidateDestination` 이 없으면 왕복할 방법이 없다. 그때는 소켓이 닫혔는지까지만 본다.
+   */
+  public async revalidate(signal: AbortSignal): Promise<boolean> {
+    const client = this.client;
+    if (!client?.connected || client.webSocket?.readyState !== StompSocketState.OPEN) {
+      return false;
+    }
+
+    const destination = this.#options.revalidateDestination;
+    if (!destination) {
+      return true;
+    }
+
+    const receipt = `revalidate-${++this.#receipts}`;
+    return new Promise<boolean>((resolve) => {
+      let settled = false;
+      let probe: StompSubscription | undefined;
+      const settle = (alive: boolean) => {
+        if (settled) return;
+        settled = true;
+        try {
+          probe?.unsubscribe();
+        } catch {
+          // 이미 끊긴 연결에서의 해제는 무시한다 — 확인 결과가 바뀌지 않는다.
+        }
+        resolve(alive);
+      };
+
+      onAbort(signal, () => settle(false));
+      // 프레임을 보내기 전에 기다려야 한다 — RECEIPT 가 먼저 도착할 수 있다.
+      client.watchForReceipt(receipt, () => settle(true));
+      try {
+        probe = client.subscribe(destination, () => {}, { id: receipt, receipt });
+      } catch {
+        settle(false);
+      }
+    });
   }
 
   /** stompjs 소켓의 readyState (StompSocketState). 소켓이 없으면 CLOSED. */

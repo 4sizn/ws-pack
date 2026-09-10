@@ -9,10 +9,13 @@ import WebSocket from "ws";
  */
 interface ServerConfig {
   port: number;
+  host: string;
 }
 
 const config: ServerConfig = {
   port: 8010,
+  // 같은 네트워크의 다른 기기(폰)에서도 붙을 수 있게 모든 인터페이스에 연다. 데모용 서버다.
+  host: "0.0.0.0",
 };
 
 const wss = new WebSocket.Server(config);

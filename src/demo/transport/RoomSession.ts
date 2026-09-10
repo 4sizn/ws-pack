@@ -1,6 +1,6 @@
 import type { Subscription } from "rxjs";
 import type { ReconnectInfo } from "../../lib";
-import { ConnectionState } from "../../lib";
+import { ConnectionState, randomId } from "../../lib";
 import type { ChatMessage, ChatUser } from "../types";
 import { buildPayload, toChatMessage } from "./roomMessage";
 import {
@@ -51,7 +51,7 @@ export function idleSnapshot(seed: ChatMessage[]): RoomSnapshot {
  */
 export class RoomSession {
   /** 이 인스턴스가 보낸 메시지를 에코에서 구분하는 식별자. 인스턴스마다 다르다. */
-  readonly clientId = crypto.randomUUID();
+  readonly clientId = randomId();
   /** 화면에 보여줄 실제 접속 대상 (destination 또는 URL) */
   readonly address: string;
 
@@ -106,6 +106,19 @@ export class RoomSession {
   public disconnect(): void {
     if (this.#disposed) return;
     void this.#transport.disconnect();
+  }
+
+  /**
+   * 연결 확인. 화면이 다시 보이거나 네트워크가 바뀌었을 때 부른다 —
+   * 모바일 웹뷰는 백그라운드에서 소켓이 죽어도 close 이벤트를 주지 않는 일이 있다.
+   */
+  public async revalidate(): Promise<boolean> {
+    if (this.#disposed) return false;
+    const alive = await this.#transport.revalidate();
+    if (!alive) {
+      this.#patch({ lastError: "연결이 끊겨 있어 다시 연결합니다" });
+    }
+    return alive;
   }
 
   public send(text: string): void {

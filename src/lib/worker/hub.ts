@@ -23,6 +23,8 @@ export interface HubClient {
   connect(): Promise<void>;
   disconnect(): Promise<void>;
   send(data: string, options?: unknown): void;
+  /** 연결이 살아 있는지 확인. 죽었으면 클라이언트가 재연결을 시작한다. */
+  revalidate(timeoutMs?: number): Promise<boolean>;
   /** destination 기반 프로토콜만 제공한다. 순수 WebSocket 은 undefined. */
   subscribe?(destination: string, options?: unknown): Observable<WireMessage>;
   readonly connectionChanges$: Observable<ConnectionState>;
@@ -104,6 +106,9 @@ export class WorkerHub {
         return;
       case "send":
         this.#send(command.handle, command.command, command.data, command.options);
+        return;
+      case "revalidate":
+        void this.#revalidate(command.handle, command.command, command.timeoutMs);
         return;
       case "subscribe":
         this.#subscribe(command.handle, command.subscription, command.destination, command.options);
@@ -220,6 +225,18 @@ export class WorkerHub {
     }
   }
 
+  async #revalidate(handleId: string, commandId: string, timeoutMs?: number): Promise<void> {
+    const found = this.#find(handleId);
+    if (!found) return;
+    const alive = await found.connection.client.revalidate(timeoutMs);
+    found.handle.port.postMessage({
+      type: "ack",
+      handle: handleId,
+      command: commandId,
+      alive,
+    } satisfies WorkerEvent);
+  }
+
   #subscribe(
     handleId: string,
     subscriptionId: string,
@@ -319,6 +336,7 @@ function withMessages(
     connect(): Promise<void>;
     disconnect(): Promise<void>;
     send(data: string, ...args: never[]): void;
+    revalidate(timeoutMs?: number): Promise<boolean>;
     connectionChanges$: Observable<ConnectionState>;
     connect$: Observable<void>;
     disconnect$: Observable<DisconnectInfo>;
@@ -335,6 +353,7 @@ function withMessages(
     disconnect: () => client.disconnect(),
     send: (data, options) =>
       (client.send as (data: string, options?: unknown) => void)(data, options),
+    revalidate: (timeoutMs) => client.revalidate(timeoutMs),
     subscribe,
     connectionChanges$: client.connectionChanges$,
     connect$: client.connect$,

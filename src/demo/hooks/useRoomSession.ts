@@ -8,6 +8,7 @@ export interface RoomControls {
   send: (text: string) => void;
   connect: () => void;
   disconnect: () => void;
+  revalidate: () => void;
 }
 
 /**
@@ -48,7 +49,23 @@ export function useRoomSession(
     send: (text) => sessionRef.current?.send(text),
     connect: () => sessionRef.current?.connect(),
     disconnect: () => sessionRef.current?.disconnect(),
+    revalidate: () => void sessionRef.current?.revalidate(),
   }).current;
+
+  // 신호원은 앱이 정한다. 라이브러리는 revalidate() 만 제공하고 언제 부를지는 모른다.
+  useEffect(() => {
+    const check = () => {
+      if (document.visibilityState === "visible") controls.revalidate();
+    };
+    document.addEventListener("visibilitychange", check);
+    window.addEventListener("online", check);
+    window.addEventListener("focus", check);
+    return () => {
+      document.removeEventListener("visibilitychange", check);
+      window.removeEventListener("online", check);
+      window.removeEventListener("focus", check);
+    };
+  }, [controls]);
 
   return [snapshot, controls];
 }

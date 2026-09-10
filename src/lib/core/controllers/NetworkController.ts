@@ -240,6 +240,38 @@ export abstract class WebSocketController<
   }
 
   /**
+   * 지금 연결이 정말 살아 있는지 확인한다. 살아 있으면 true, 아니면 재연결을 시작하고 false.
+   *
+   * 언제 부를지는 이 라이브러리가 정하지 않는다 — 포그라운드 복귀, 네트워크 전환 같은 신호는
+   * 실행 환경마다 다르고(워커에는 document 가 없다) 앱마다 정책이 다르다. 신호를 받은 쪽이 부른다.
+   *
+   * @param timeoutMs 왕복 응답을 기다리는 시간. 지나면 죽은 것으로 본다.
+   */
+  public async revalidate(timeoutMs = 3000): Promise<boolean> {
+    if (this.#destroyed) return false;
+    if (this.connectionState !== ConnectionState.OPEN || !this.adapter) {
+      return false;
+    }
+
+    const limit = new AbortController();
+    const timer = setTimeout(() => limit.abort(), timeoutMs);
+    let alive: boolean;
+    try {
+      alive = await this.adapter.revalidate(limit.signal);
+    } catch {
+      alive = false;
+    } finally {
+      clearTimeout(timer);
+    }
+
+    if (alive) return true;
+
+    // 죽은 연결은 소켓이 닫힌 것과 같은 사건으로 취급한다 — 재연결 경로를 하나로 유지한다.
+    this.#socketClosed$.next({ reason: "revalidate failed" });
+    return false;
+  }
+
+  /**
    * 메시지 전송. OPEN 이 아니면 throw — 큐잉하지 않는다. 필요하면 호출 측이 connect$ 를 기다린다.
    */
   public send(data: string, ...args: SendArgs<TSend>): void {

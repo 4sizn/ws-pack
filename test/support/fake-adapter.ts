@@ -18,6 +18,10 @@ export class FakeAdapter implements IWebSocketClientAdapter<undefined, string> {
   readonly signals: AbortSignal[] = [];
   /** 연결된 상태인지 (send 방어용) */
   connected = false;
+  /** revalidate() 가 돌려줄 값. "hang" 이면 응답하지 않아 신호 기한을 시험한다. */
+  liveness: boolean | "hang" = true;
+  /** revalidate() 호출 횟수 */
+  revalidations = 0;
 
   #message?: (data: string) => void;
   #error?: (error: Error) => void;
@@ -50,6 +54,14 @@ export class FakeAdapter implements IWebSocketClientAdapter<undefined, string> {
     if (!this.connected) return;
     this.connected = false;
     this.releases += 1;
+  }
+
+  async revalidate(signal: AbortSignal): Promise<boolean> {
+    this.revalidations += 1;
+    if (this.liveness !== "hang") return this.liveness;
+    return new Promise<boolean>((resolve) => {
+      signal.addEventListener("abort", () => resolve(false), { once: true });
+    });
   }
 
   send(data: string): void {

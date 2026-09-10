@@ -25,8 +25,9 @@ broker.on("clientDisconnect", (client) => {
   console.log(`연결 종료: ${client.id}`);
 });
 
-http.listen(PORT, "127.0.0.1", () => {
-  console.log(`MQTT(WebSocket) 브로커가 ws://127.0.0.1:${PORT} 에서 실행 중입니다`);
+// 같은 네트워크의 다른 기기(폰)에서도 붙을 수 있게 모든 인터페이스에 연다. 데모용 브로커다.
+http.listen(PORT, "0.0.0.0", () => {
+  console.log(`MQTT(WebSocket) 브로커가 ws://0.0.0.0:${PORT} 에서 실행 중입니다`);
 });
 
 function toDuplex(socket: WebSocket): Duplex {

@@ -186,6 +186,15 @@ export class WindowWebSocketClientAdapter extends WebSocketClientAdapter<
     this.#closeCallbacks.add(callback);
   }
 
+  /**
+   * 순수 WebSocket 은 프로토콜 차원의 왕복 수단이 없다. ping/pong 프레임은 브라우저 API 로
+   * 보낼 수 없고, 애플리케이션 ping 은 서버가 약속해 줘야 성립한다.
+   * 그래서 여기서는 소켓이 이미 닫혔는지까지만 본다 — 상대만 사라진 half-open 은 잡지 못한다.
+   */
+  public async revalidate(_signal: AbortSignal): Promise<boolean> {
+    return this.client?.readyState === WebSocket.OPEN;
+  }
+
   /** 브라우저 소켓의 readyState. 소켓이 없으면 CLOSED. */
   public networkStatus(): number {
     return this.client?.readyState ?? READY_STATE_CLOSED;

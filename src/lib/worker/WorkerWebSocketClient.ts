@@ -4,6 +4,7 @@ import { ConnectionState } from "../core/ConnectionState";
 import type { NetworkClient } from "../core/NetworkClient";
 import type { PubSubAble } from "../core/PubSubAble";
 import type { ReconnectInfo } from "../core/Reconnect";
+import { randomId } from "../core/randomId";
 import type {
   MessageLike,
   WireMessage,
@@ -38,8 +39,12 @@ export class WorkerWebSocketClient
   implements NetworkClient<WireMessage, unknown>, PubSubAble<WireMessage, unknown>
 {
   readonly #port: MessageLike;
-  readonly #handle = crypto.randomUUID();
+  readonly #handle = randomId();
   readonly #pending = new Map<string, { resolve: () => void; reject: (error: Error) => void }>();
+  readonly #answers = new Map<
+    string,
+    { resolve: (alive: boolean) => void; reject: (error: Error) => void }
+  >();
   readonly #subscribers = new Map<string, Subject<WireMessage>>();
 
   readonly #connectionState$ = new Subject<ConnectionState>();
@@ -97,10 +102,23 @@ export class WorkerWebSocketClient
     }));
   }
 
+  /**
+   * 워커에게 연결 확인을 시킨다. 확인 자체는 소켓을 쥔 워커가 하고, 결과만 건너온다.
+   */
+  public async revalidate(timeoutMs?: number): Promise<boolean> {
+    if (this.#destroyed) return false;
+    return this.#ask((command) => ({
+      type: "revalidate",
+      handle: this.#handle,
+      command,
+      timeoutMs,
+    }));
+  }
+
   /** destination 구독 (STOMP/MQTT). unsubscribe 하면 워커 쪽 구독도 풀린다. */
   public subscribe(destination: string, options?: unknown): Observable<WireMessage> {
     return new Observable<WireMessage>((observer) => {
-      const id = crypto.randomUUID();
+      const id = randomId();
       const subject = new Subject<WireMessage>();
       this.#subscribers.set(id, subject);
       const inner = subject.subscribe(observer);
@@ -182,6 +200,16 @@ export class WorkerWebSocketClient
     return this.#exhaustedSubject.asObservable();
   }
 
+  /** ack 의 alive 값을 돌려받는 요청. revalidate 처럼 결과가 있는 명령에 쓴다. */
+  #ask(build: (command: string) => WorkerCommand): Promise<boolean> {
+    const command = `${this.#handle}:${++this.#commands}`;
+    const settled = new Promise<boolean>((resolve, reject) => {
+      this.#answers.set(command, { resolve, reject });
+    });
+    this.#post(build(command));
+    return settled;
+  }
+
   #request(build: (command: string) => WorkerCommand): Promise<void> {
     const command = `${this.#handle}:${++this.#commands}`;
     const settled = new Promise<void>((resolve, reject) => {
@@ -200,6 +228,13 @@ export class WorkerWebSocketClient
 
     switch (event.type) {
       case "ack": {
+        const answer = this.#answers.get(event.command);
+        if (answer) {
+          this.#answers.delete(event.command);
+          if (event.error) answer.reject(new Error(event.error));
+          else answer.resolve(event.alive === true);
+          return;
+        }
         const pending = this.#pending.get(event.command);
         this.#pending.delete(event.command);
         if (!pending) return;
