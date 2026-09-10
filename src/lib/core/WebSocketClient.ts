@@ -20,6 +20,7 @@ import {
   StompWebSocketController,
   WindowWebSocketController,
 } from "./controllers/NetworkController";
+import type { NetworkClient } from "./NetworkClient";
 import type { PubSubAble } from "./PubSubAble";
 import type { ReconnectInfo } from "./Reconnect";
 
@@ -34,7 +35,8 @@ export class WebSocketClient<
   TMessage = string,
   TSend = undefined,
   TController extends WebSocketController<TMessage, TSend> = WebSocketController<TMessage, TSend>,
-> {
+> implements NetworkClient<TMessage, TSend>
+{
   protected readonly controller: TController;
 
   constructor(controller: TController) {

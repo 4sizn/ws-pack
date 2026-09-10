@@ -192,6 +192,13 @@ export abstract class WebSocketController<
    * 연결되기 전에 disconnect() 가 끼어들면 조용히 resolve 한다 (에러 아님).
    */
   public connect(): Promise<void> {
+    const state = this.connectionState;
+    // 이미 연결 중이거나 연결돼 있으면 의도를 발행하지 않는다.
+    // 발행하는 순간 switchMap 이 지금 돌고 있는 세션을 대체하고, 그 세션의 finalize 가
+    // 살아 있는 연결을 놓아 버린다 — 아무것도 바꾸지 않는 의도가 연결을 끊는 셈이 된다.
+    if (state !== ConnectionState.IDLE && state !== ConnectionState.CLOSED) {
+      return Promise.resolve();
+    }
     return this.#intend("connect");
   }
 
@@ -202,7 +209,13 @@ export abstract class WebSocketController<
    * 플러그인이 throw 하거나 오래 걸려도 종료 자체는 진행된다.
    */
   public async disconnect(): Promise<void> {
-    const wasOpen = this.connectionState === ConnectionState.OPEN;
+    const state = this.connectionState;
+    // 끊을 것이 없으면 의도를 발행하지 않는다 (같은 이유로 무의미한 대체를 만들지 않는다).
+    if (state === ConnectionState.IDLE || state === ConnectionState.CLOSED) {
+      return;
+    }
+
+    const wasOpen = state === ConnectionState.OPEN;
     if (wasOpen) {
       await this.#dispatchSafe("onBeforeDisconnect");
     }
