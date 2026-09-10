@@ -57,8 +57,13 @@ export class TestMqttBroker {
       const left = (this.#subscriptions.get(client.id) ?? 0) - subscriptions.length;
       this.#subscriptions.set(client.id, Math.max(left, 0));
     });
-    broker.on("clientDisconnect", (client) => this.#subscriptions.delete(client.id));
-    broker.on("clientError", (client) => this.#subscriptions.delete(client.id));
+    // 끊긴 클라이언트의 구독은 지운다. 남겨 두면 "받을 준비가 됐는가" 판정이 낡은 수를 보고
+    // 통과해 버리고, 아무도 듣지 않는 순간에 발행하게 된다.
+    const forget = (client: { id: string }) => this.#subscriptions.delete(client.id);
+    broker.on("clientDisconnect", forget);
+    broker.on("clientError", forget);
+    broker.on("connectionError", forget);
+    broker.on("clientReady", (client) => this.#subscriptions.delete(client.id));
 
     wss.on("connection", (socket) => {
       this.#sockets.add(socket);
@@ -97,6 +102,11 @@ export class TestMqttBroker {
    */
   mute(): void {
     this.#muted = true;
+  }
+
+  /** 다시 응답하게 되돌린다. 무응답 뒤의 회복까지 시험하기 위한 것이다. */
+  unmute(): void {
+    this.#muted = false;
   }
 
   /**

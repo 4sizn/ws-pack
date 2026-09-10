@@ -66,6 +66,11 @@ export class TestEchoServer {
     this.#mute = true;
   }
 
+  /** 다시 응답하게 되돌린다. 무응답 뒤의 회복까지 시험하기 위한 것이다. */
+  unmute(): void {
+    this.#mute = false;
+  }
+
   #fanout(room: string, payload: string): void {
     for (const [socket, joined] of this.#rooms) {
       if (joined === room && socket.readyState === socket.OPEN) {

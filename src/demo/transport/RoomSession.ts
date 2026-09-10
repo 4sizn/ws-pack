@@ -29,6 +29,11 @@ export interface RoomSessionConfig {
   me: ChatUser;
   /** 화면 초기 표시용 과거 메시지 */
   seed: ChatMessage[];
+  /**
+   * 연결을 만드는 방법. 기본값은 실제 전송이고, 테스트가 가짜를 끼울 수 있게 열어 둔다 —
+   * 이 클래스의 규칙(스냅샷 갱신, 내 메시지 판별, 폐기)은 소켓 없이도 시험할 수 있어야 한다.
+   */
+  createTransport?: (protocol: Protocol, room: string, mode: TransportMode) => RoomTransport;
 }
 
 const idleReconnect: ReconnectInfo = { attempts: 0, maxAttempts: 0, isReconnecting: false };
@@ -67,7 +72,8 @@ export class RoomSession {
   constructor(config: RoomSessionConfig) {
     this.#roomId = config.roomId;
     this.#me = config.me;
-    this.#transport = createRoomTransport(config.protocol, config.room, config.mode);
+    const make = config.createTransport ?? createRoomTransport;
+    this.#transport = make(config.protocol, config.room, config.mode);
     this.address = this.#transport.address;
     this.#snapshot = idleSnapshot(config.seed);
 

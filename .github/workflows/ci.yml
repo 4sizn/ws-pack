@@ -32,3 +32,7 @@ jobs:
       # 소비자가 실제로 받는 산출물이 만들어지는지까지 본다.
       - name: Build library
         run: bun run build:lib
+
+      # 진입점 설정이 틀리면 설치한 쪽에서만 깨진다. 여기서 잡는다.
+      - name: Check package entry points
+        run: bun run check:dist

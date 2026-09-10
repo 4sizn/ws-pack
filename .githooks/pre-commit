@@ -14,4 +14,5 @@ bunx biome check .
 echo "pre-commit: bun test"
 bun test
 
+# 빌드와 산출물 검증은 CI 가 맡는다 — 커밋마다 돌리기엔 느리고, 훅이 느리면 우회하게 된다.
 echo "pre-commit: ok"
