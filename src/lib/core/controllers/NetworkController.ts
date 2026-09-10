@@ -425,7 +425,6 @@ export abstract class WebSocketController<
 
     this.#plugins.set(plugin.name, plugin);
     plugin.attach();
-    console.log(`[${this.name}] 플러그인 추가: ${plugin.name}`);
   }
 
   /**
@@ -439,7 +438,6 @@ export abstract class WebSocketController<
 
     plugin.detach();
     this.#plugins.delete(pluginName);
-    console.log(`[${this.name}] 플러그인 제거: ${pluginName}`);
   }
 
   /**
