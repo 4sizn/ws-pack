@@ -9,7 +9,7 @@ import {
   type StompSubscription,
 } from "@stomp/stompjs";
 import { Observable, type Subscriber } from "rxjs";
-import { onAbort } from "../abort";
+import { abortReason, onAbort } from "../abort";
 import type { SocketCloseInfo } from "../CloseInfo";
 import { StompStompError } from "../errors/StompStompError";
 import { StompWebsocketError } from "../errors/StompWebsocketError";
@@ -295,8 +295,4 @@ export class StompWebSocketClientAdapter
   public networkStatus(): number {
     return this.client?.webSocket?.readyState ?? StompSocketState.CLOSED;
   }
-}
-
-function abortReason(signal: AbortSignal): Error {
-  return signal.reason instanceof Error ? signal.reason : new Error("connect aborted");
 }

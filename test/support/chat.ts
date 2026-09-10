@@ -1,6 +1,7 @@
 import { map, type Observable } from "rxjs";
 import type { ConnectionState } from "../../src/lib";
-import { ReconnectTimeMode, StompWebSocketClient } from "../../src/lib";
+import { ReconnectTimeMode, StompWebSocketClient, WindowWebSocketClient } from "../../src/lib";
+import { TestEchoServer } from "./echo-server";
 import { TestStompBroker } from "./stomp-broker";
 
 /**
@@ -16,7 +17,7 @@ export interface ChatBackend {
   /** 살아 있는 클라이언트 연결 수. 소켓 누수 판정 기준. */
   readonly connectionCount: number;
   /**
-   * 서버가 인지한 수신 대기자 수. 보내기 전에 이 값이 기대치에 도달하길 기다린다 —
+   * 서버가 인지한 수신 대기자 수(최소 보장값). 보내기 전에 이 값이 기대치에 도달하길 기다린다 —
    * 구독 등록과 발행은 서로 다른 연결에서 일어나므로 도착 순서가 보장되지 않는다.
    * destination 개념이 없는 프로토콜에서는 연결 수와 같다.
    */
@@ -101,20 +102,54 @@ export const stompDriver: ChatDriver = {
   },
 };
 
+interface WindowBackend extends ChatBackend {
+  readonly url: string;
+}
+
 /**
- * 순수 WebSocket 모드. 방은 접속 URL 로 구분하고, 서버가 같은 방 참가자에게 되뿌린다.
- * WindowWebSocketClientAdapter 가 구현되면 available 을 true 로 바꾸는 것만으로 같은 시나리오가 돈다.
+ * 순수 WebSocket 모드. destination 이 없으므로 방은 접속 URL 로 정하고, 서버가 같은 방
+ * 참가자에게 되뿌린다. 참가자 하나가 연결 하나라서 구독 수는 곧 연결 수다.
  */
 export const windowDriver: ChatDriver = {
   name: "window",
-  available: false,
-  pendingReason: "WindowWebSocketClientAdapter 미구현 (connect/send/onMessage 가 throw)",
+  available: true,
 
-  start(): Promise<ChatBackend> {
-    throw new Error("not implemented");
+  async start(): Promise<ChatBackend> {
+    const server = new TestEchoServer();
+    await server.start();
+    const backend: WindowBackend = {
+      url: server.url,
+      get connectionCount() {
+        return server.connectionCount;
+      },
+      // 이 프로토콜에는 구독이라는 단계가 없다. 연결되면 곧 수신 대기 상태다.
+      get subscriptionCount() {
+        return server.connectionCount;
+      },
+      killConnections: () => server.killConnections(),
+      mute: () => server.mute(),
+      stop: () => server.stop(),
+    };
+    return backend;
   },
-  member(): ChatMember {
-    throw new Error("not implemented");
+
+  member(backend: ChatBackend, room: string): ChatMember {
+    const { url } = backend as WindowBackend;
+    const client = new WindowWebSocketClient({
+      url: `${url}/?room=${encodeURIComponent(room)}`,
+      reconnect,
+    });
+
+    return {
+      connect: () => client.connect(),
+      disconnect: () => client.disconnect(),
+      listen: () => client.message$,
+      say: (text) => client.send(text),
+      get state() {
+        return client.connectionState;
+      },
+      stateChanges$: client.connectionChanges$,
+    };
   },
 };
 
