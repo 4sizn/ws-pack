@@ -37,13 +37,28 @@ describe("연결 수명", () => {
     expect(adapter.attempts).toBe(1);
   });
 
-  it("이미 연결돼 있으면 connect() 는 아무 일도 하지 않는다", async () => {
+  it("이미 연결돼 있으면 connect() 는 아무 일도 하지 않는다 — 연결도 그대로 유지된다", async () => {
     const { adapter, controller } = setup();
     await controller.connect();
     await controller.connect();
 
     expect(adapter.attempts).toBe(1);
     expect(controller.connectionState).toBe(ConnectionState.OPEN);
+    // 살아 있는 연결이 그대로여야 한다. 재진입 connect() 가 세션을 대체하면 여기서 끊긴다.
+    expect(adapter.connected).toBe(true);
+    expect(adapter.signals[0].aborted).toBe(false);
+    controller.send("여전히 보낼 수 있다");
+    expect(adapter.sent).toEqual(["여전히 보낼 수 있다"]);
+  });
+
+  it("연결된 뒤 disconnect() 를 두 번 불러도 문제가 없다", async () => {
+    const { adapter, controller } = setup();
+    await controller.connect();
+    await controller.disconnect();
+    await controller.disconnect();
+
+    expect(controller.connectionState).toBe(ConnectionState.IDLE);
+    expect(adapter.releases).toBe(1);
   });
 
   it("상태는 IDLE → CONNECTING → OPEN 순서로만 바뀐다", async () => {

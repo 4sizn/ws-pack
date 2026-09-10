@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ChatRoom } from "./components/ChatRoom";
 import { mockRooms } from "./data/mockRooms";
-import type { Protocol } from "./transport/roomTransport";
+import type { Protocol, TransportMode } from "./transport/roomTransport";
 import type { ChatUser } from "./types";
 import "./styles/chat.css";
 
@@ -32,8 +32,21 @@ const protocolHint: Record<Protocol, string> = {
  * - 프로토콜: STOMP / 순수 WebSocket. 무엇을 고르든 화면 동작은 같아야 한다.
  * - 방 배치: 분리하면 서로 안 보이고, 합치면 세 방 모두에 도착해야 한다.
  */
+const modeLabel: Record<TransportMode, string> = {
+  direct: "직접 연결",
+  worker: "Worker",
+  shared: "SharedWorker",
+};
+
+const modeHint: Record<TransportMode, string> = {
+  direct: "페이지(메인 스레드)가 소켓을 소유한다. 탭마다 연결이 따로 생긴다.",
+  worker: "이 탭 전용 Worker 가 소유한다. 소켓 작업이 메인 스레드에서 빠지지만 탭마다 따로다.",
+  shared: "SharedWorker 가 소유한다. 탭을 여러 개 열어도 같은 방이면 소켓은 하나다.",
+};
+
 export function DemoApp() {
   const [protocol, setProtocol] = useState<Protocol>("stomp");
+  const [mode, setMode] = useState<TransportMode>("direct");
   const [rooms, setRooms] = useState<Rooms>(separated);
   const isShared = mockRooms.every((room) => rooms[room.id] === SHARED_ROOM);
 
@@ -61,6 +74,20 @@ export function DemoApp() {
             </button>
           ))}
           <span className="topic-switch__hint">{protocolHint[protocol]}</span>
+        </div>
+
+        <div className="topic-switch">
+          {(["direct", "worker", "shared"] as const).map((value) => (
+            <button
+              key={value}
+              type="button"
+              className={`topic-switch__button${mode === value ? " topic-switch__button--active" : ""}`}
+              onClick={() => setMode(value)}
+            >
+              {modeLabel[value]}
+            </button>
+          ))}
+          <span className="topic-switch__hint">{modeHint[mode]}</span>
         </div>
 
         <div className="topic-switch">
@@ -94,6 +121,7 @@ export function DemoApp() {
             me={me}
             room={rooms[chatRoom.id]}
             protocol={protocol}
+            mode={mode}
             onRoomChange={(next) => setOne(chatRoom.id, next)}
           />
         ))}

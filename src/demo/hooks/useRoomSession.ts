@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { idleSnapshot, RoomSession, type RoomSnapshot } from "../transport/RoomSession";
-import type { Protocol } from "../transport/roomTransport";
+import type { Protocol, TransportMode } from "../transport/roomTransport";
 import type { ChatRoom, ChatUser } from "../types";
 
 /** 렌더와 무관한 명령. 스냅샷과 분리해서 넘긴다 — 참조가 안 바뀌므로 리렌더를 유발하지 않는다. */
@@ -21,6 +21,7 @@ export function useRoomSession(
   me: ChatUser,
   room: string,
   protocol: Protocol,
+  mode: TransportMode,
 ): [RoomSnapshot, RoomControls] {
   const sessionRef = useRef<RoomSession | null>(null);
   const seed = useRef(chatRoom.messages).current;
@@ -29,7 +30,7 @@ export function useRoomSession(
   const roomId = chatRoom.id;
 
   useEffect(() => {
-    const session = new RoomSession({ roomId, room, protocol, me, seed });
+    const session = new RoomSession({ roomId, room, protocol, mode, me, seed });
     sessionRef.current = session;
 
     setSnapshot(session.getSnapshot());
@@ -41,7 +42,7 @@ export function useRoomSession(
       sessionRef.current = null;
       session.dispose();
     };
-  }, [roomId, room, protocol, me, seed]);
+  }, [roomId, room, protocol, mode, me, seed]);
 
   const controls = useRef<RoomControls>({
     send: (text) => sessionRef.current?.send(text),

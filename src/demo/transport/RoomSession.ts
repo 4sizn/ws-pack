@@ -3,7 +3,12 @@ import type { ReconnectInfo } from "../../lib";
 import { ConnectionState } from "../../lib";
 import type { ChatMessage, ChatUser } from "../types";
 import { buildPayload, toChatMessage } from "./roomMessage";
-import { createRoomTransport, type Protocol, type RoomTransport } from "./roomTransport";
+import {
+  createRoomTransport,
+  type Protocol,
+  type RoomTransport,
+  type TransportMode,
+} from "./roomTransport";
 
 /** React 가 읽는 값. 전부 불변 — 렌더는 이 스냅샷만 보고, 클라이언트 인스턴스는 보지 않는다. */
 export interface RoomSnapshot {
@@ -19,6 +24,8 @@ export interface RoomSessionConfig {
   /** 방 이름. 프로토콜이 이걸 destination 이나 접속 URL 로 바꾼다. */
   room: string;
   protocol: Protocol;
+  /** 연결을 페이지가 직접 들고 있을지, SharedWorker 안에서 들고 있을지 */
+  mode: TransportMode;
   me: ChatUser;
   /** 화면 초기 표시용 과거 메시지 */
   seed: ChatMessage[];
@@ -60,7 +67,7 @@ export class RoomSession {
   constructor(config: RoomSessionConfig) {
     this.#roomId = config.roomId;
     this.#me = config.me;
-    this.#transport = createRoomTransport(config.protocol, config.room);
+    this.#transport = createRoomTransport(config.protocol, config.room, config.mode);
     this.address = this.#transport.address;
     this.#snapshot = idleSnapshot(config.seed);
 
@@ -120,6 +127,8 @@ export class RoomSession {
     }
     this.#listeners.clear();
     void this.#transport.disconnect();
+    // 워커 손잡이처럼 종료와 별개로 놓아야 하는 자원을 정리한다.
+    this.#transport.release?.();
   }
 
   public getSnapshot = (): RoomSnapshot => this.#snapshot;
