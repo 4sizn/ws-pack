@@ -109,6 +109,7 @@ function stompTransport(room: string): RoomTransport {
     error$: client.error$,
     disconnect$: client.disconnect$,
     address: destination,
+    release: () => client.destroy(),
   };
 }
 
@@ -127,6 +128,7 @@ function windowTransport(room: string): RoomTransport {
     error$: client.error$,
     disconnect$: client.disconnect$,
     address: url,
+    release: () => client.destroy(),
   };
 }
 
@@ -144,6 +146,7 @@ function mqttTransport(room: string): RoomTransport {
     error$: client.error$,
     disconnect$: client.disconnect$,
     address: roomAddress("mqtt", room),
+    release: () => client.destroy(),
   };
 }
 
@@ -212,7 +215,7 @@ function workerTransport(
     error$: merge(client.error$, sendErrors),
     disconnect$: client.disconnect$,
     address: roomAddress(protocol, room),
-    release: () => client.dispose(),
+    release: () => client.destroy(),
   };
 }
 

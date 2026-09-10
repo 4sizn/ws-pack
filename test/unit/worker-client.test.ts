@@ -151,13 +151,13 @@ describe("워커 클라이언트 왕복", () => {
     close();
   });
 
-  it("dispose() 하면 워커의 연결도 정리된다", async () => {
+  it("destroy() 하면 워커의 연결도 정리된다", async () => {
     const session = pair();
     const { page, hub, close } = session;
     await page.connect();
     expect(hub.connectionCount).toBe(1);
 
-    page.dispose();
+    page.destroy();
     await delay(10);
 
     expect(hub.connectionCount).toBe(0);

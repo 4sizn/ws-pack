@@ -14,6 +14,7 @@ import {
   repeat,
   retry,
   Subject,
+  type Subscription,
   switchMap,
   take,
   tap,
@@ -42,7 +43,6 @@ import type { DisconnectInfo, SocketCloseInfo } from "../CloseInfo";
 import { ConnectionState } from "../ConnectionState";
 import type { PubSubAble } from "../PubSubAble";
 import type { AbstractPlugin } from "../plugins/AbstractPlugin";
-import { WebSocketMonitorPlugin } from "../plugins/AbstractPlugin";
 import {
   computeReconnectDelay,
   type ReconnectConfig,
@@ -110,11 +110,17 @@ export abstract class WebSocketController<
   readonly #reconnectAttemptSubject = new Subject<ReconnectInfo>();
   readonly #maxReconnectReachedSubject = new Subject<void>();
 
+  /** 의도 처리 구독. destroy() 가 이걸 끊으면 진행 중인 세션도 finalize 를 거쳐 정리된다. */
+  readonly #intents: Subscription;
+
+  /** 폐기된 인스턴스인지. 되돌릴 수 없는 종착 상태라 연결 상태와 따로 둔다. */
+  #destroyed = false;
+
   constructor(reconnect?: ReconnectConfig) {
     super();
     this.#reconnect = resolveReconnectConfig(reconnect);
     // 마지막 의도가 이긴다. 이전 흐름의 정리는 그 흐름의 finalize 가 책임진다.
-    this.#intent$.pipe(switchMap((intent) => this.#run(intent))).subscribe();
+    this.#intents = this.#intent$.pipe(switchMap((intent) => this.#run(intent))).subscribe();
   }
 
   // ============================================
@@ -192,6 +198,10 @@ export abstract class WebSocketController<
    * 연결되기 전에 disconnect() 가 끼어들면 조용히 resolve 한다 (에러 아님).
    */
   public connect(): Promise<void> {
+    if (this.#destroyed) {
+      return Promise.reject(new Error(`[${this.name}] controller has been destroyed`));
+    }
+
     const state = this.connectionState;
     // 이미 연결 중이거나 연결돼 있으면 의도를 발행하지 않는다.
     // 발행하는 순간 switchMap 이 지금 돌고 있는 세션을 대체하고, 그 세션의 finalize 가
@@ -209,6 +219,8 @@ export abstract class WebSocketController<
    * 플러그인이 throw 하거나 오래 걸려도 종료 자체는 진행된다.
    */
   public async disconnect(): Promise<void> {
+    if (this.#destroyed) return;
+
     const state = this.connectionState;
     // 끊을 것이 없으면 의도를 발행하지 않는다 (같은 이유로 무의미한 대체를 만들지 않는다).
     if (state === ConnectionState.IDLE || state === ConnectionState.CLOSED) {
@@ -231,14 +243,49 @@ export abstract class WebSocketController<
    * 메시지 전송. OPEN 이 아니면 throw — 큐잉하지 않는다. 필요하면 호출 측이 connect$ 를 기다린다.
    */
   public send(data: string, ...args: SendArgs<TSend>): void {
+    if (this.#destroyed) {
+      throw new Error(`[${this.name}] cannot send: controller has been destroyed`);
+    }
     if (this.connectionState !== ConnectionState.OPEN || !this.adapter) {
       throw new Error(`[${this.name}] cannot send: connection is ${this.connectionState}`);
     }
     this.adapter.send(data, ...args);
   }
 
-  public destroy?(): void {
-    throw new Error("Method not implemented.");
+  /**
+   * 인스턴스 폐기. 연결을 놓고, 스트림을 완료하고, 플러그인을 뗀다. 다시 쓰지 않는다.
+   *
+   * 의도 구독을 끊는 것으로 시작하는 이유: 진행 중인 세션이 그 순간 구독 해제되고,
+   * 세션의 finalize 가 signal 을 abort 해서 어댑터가 소켓을 놓는다 — 종료 경로가 하나로 유지된다.
+   *
+   * 두 번 불러도 안전하고, 폐기 후의 connect() 는 조용히 무시되는 대신 거부된다.
+   * 살아 있다고 착각한 채 기다리는 호출자를 만들지 않기 위해서다.
+   */
+  public destroy(): void {
+    if (this.#destroyed) return;
+    this.#destroyed = true;
+
+    this.#intents.unsubscribe();
+    void this.adapter?.disconnect();
+
+    for (const name of [...this.#plugins.keys()]) {
+      this.removePlugin(name);
+    }
+
+    this.#intent$.complete();
+    this.#socketClosed$.complete();
+    this.#connectionState$.complete();
+    this.#connectSubject.complete();
+    this.#disconnectSubject.complete();
+    this.#errorSubject.complete();
+    this.#messageSubject.complete();
+    this.#reconnectAttemptSubject.complete();
+    this.#maxReconnectReachedSubject.complete();
+  }
+
+  /** 폐기 여부. 폐기된 인스턴스는 연결도 전송도 받지 않는다. */
+  public get destroyed(): boolean {
+    return this.#destroyed;
   }
 
   /**
@@ -454,12 +501,10 @@ export abstract class WebSocketController<
     return Array.from(this.#plugins.keys());
   }
 
+  /** 훅을 가진 플러그인에게만 전달한다. 어떤 클래스인지는 보지 않는다. */
   private async dispatch(hook: PluginHook): Promise<void> {
     for (const plugin of this.#plugins.values()) {
-      // 연결 생명주기 훅은 WebSocketMonitorPlugin 전용 — 다른 플러그인엔 없다.
-      if (plugin instanceof WebSocketMonitorPlugin) {
-        await plugin[hook]?.();
-      }
+      await plugin[hook]?.();
     }
   }
 
@@ -474,9 +519,7 @@ export abstract class WebSocketController<
 
   private async dispatchError(error: Error): Promise<void> {
     for (const plugin of this.#plugins.values()) {
-      if (plugin instanceof WebSocketMonitorPlugin) {
-        await plugin.onError?.(error);
-      }
+      await plugin.onError?.(error);
     }
   }
 }

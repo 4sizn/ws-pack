@@ -53,6 +53,7 @@ export class WorkerWebSocketClient
   #state: ConnectionState = ConnectionState.IDLE;
   #reconnect: ReconnectInfo = { attempts: 0, maxAttempts: 0, isReconnecting: false };
   #commands = 0;
+  #destroyed = false;
 
   constructor(
     target: Worker | SharedWorker | MessagePort,
@@ -72,6 +73,9 @@ export class WorkerWebSocketClient
   }
 
   public connect(): Promise<void> {
+    if (this.#destroyed) {
+      return Promise.reject(new Error("WorkerWebSocketClient has been destroyed"));
+    }
     return this.#request((command) => ({ type: "connect", handle: this.#handle, command }));
   }
 
@@ -117,11 +121,25 @@ export class WorkerWebSocketClient
     });
   }
 
-  /** 이 손잡이를 놓는다. 마지막 사용자면 워커가 연결도 닫는다. */
-  public dispose(): void {
+  /**
+   * 이 손잡이를 놓는다. 마지막 사용자면 워커가 연결도 닫는다.
+   * 직접 연결 클라이언트의 destroy() 와 같은 자리다 — 소비자 코드가 둘을 갈아 끼울 수 있어야 한다.
+   */
+  public destroy(): void {
+    if (this.#destroyed) return;
+    this.#destroyed = true;
+
     this.#post({ type: "release", handle: this.#handle });
     for (const subject of this.#subscribers.values()) subject.complete();
     this.#subscribers.clear();
+
+    this.#connectionState$.complete();
+    this.#connectSubject.complete();
+    this.#disconnectSubject.complete();
+    this.#errorSubject.complete();
+    this.#messageSubject.complete();
+    this.#reconnectSubject.complete();
+    this.#exhaustedSubject.complete();
   }
 
   public get connectionState(): ConnectionState {

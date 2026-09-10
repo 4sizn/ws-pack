@@ -15,8 +15,10 @@ export { WindowWebsocketError } from "./core/errors/WindowWebsocketError";
 export type { NetworkClient } from "./core/NetworkClient";
 export type { PubSubAble } from "./core/PubSubAble";
 export {
+  AbstractPlugin,
   type Logger,
   LoggingPlugin,
+  type PluginLifecycleHooks,
   type WebSocketMonitorHandlers,
   WebSocketMonitorPlugin,
 } from "./core/plugins/AbstractPlugin";
