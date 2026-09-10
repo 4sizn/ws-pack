@@ -1,6 +1,12 @@
 import type { IMessage, StompHeaders } from "@stomp/stompjs";
 import type { Observable } from "rxjs";
 import type {
+  MqttMessage,
+  MqttSendOptions,
+  MqttSubscribeOptions,
+  MqttWebSocketClientOptions,
+} from "./adapters/MqttWebSocketClientAdapter";
+import type {
   StompSendOptions,
   StompWebSocketClientOptions,
 } from "./adapters/StompWebSocketClientAdapter";
@@ -112,14 +118,31 @@ export class StompWebSocketClient
   }
 }
 
-export class MqttWebSocketClient extends WebSocketClient<string> {
-  // TODO: Mqtt 옵션 타입 정의 + MqttWebSocketClientAdapter 구현 필요
-  constructor(options: unknown) {
+export class MqttWebSocketClient
+  extends WebSocketClient<MqttMessage, MqttSendOptions, MqttWebSocketController>
+  implements PubSubAble<MqttMessage, MqttSubscribeOptions>
+{
+  constructor(options: MqttWebSocketClientOptions) {
     super(new MqttWebSocketController(options));
+  }
+
+  /**
+   * MQTT topic 필터 구독. connect() 전에 불러도 되고, 재연결되면 자동으로 다시 걸린다.
+   * 반환 Observable 을 unsubscribe 하면 브로커 구독도 해제된다.
+   */
+  public subscribe(filter: string, options?: MqttSubscribeOptions): Observable<MqttMessage> {
+    return this.controller.subscribe(filter, options);
   }
 }
 
 // 재노출 — Adapter/Controller 는 각자 파일이 정의처. 기존 import 경로 호환용.
+export {
+  type MqttMessage,
+  type MqttSendOptions,
+  type MqttSubscribeOptions,
+  MqttWebSocketClientAdapter,
+  type MqttWebSocketClientOptions,
+} from "./adapters/MqttWebSocketClientAdapter";
 export {
   type StompSendOptions,
   StompWebSocketClientAdapter,

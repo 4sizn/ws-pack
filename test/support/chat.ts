@@ -1,7 +1,13 @@
 import { map, type Observable } from "rxjs";
 import type { ConnectionState } from "../../src/lib";
-import { ReconnectTimeMode, StompWebSocketClient, WindowWebSocketClient } from "../../src/lib";
+import {
+  MqttWebSocketClient,
+  ReconnectTimeMode,
+  StompWebSocketClient,
+  WindowWebSocketClient,
+} from "../../src/lib";
 import { TestEchoServer } from "./echo-server";
+import { TestMqttBroker } from "./mqtt-broker";
 import { TestStompBroker } from "./stomp-broker";
 
 /**
@@ -153,17 +159,48 @@ export const windowDriver: ChatDriver = {
   },
 };
 
+interface MqttBackend extends ChatBackend {
+  readonly url: string;
+}
+
 /** MQTT 모드. topic 이 곧 방이라 STOMP 와 같은 형태가 된다. */
 export const mqttDriver: ChatDriver = {
   name: "mqtt",
-  available: false,
-  pendingReason: "MqttWebSocketClientAdapter 미구현 (Controller 가 createAdapter 에서 throw)",
+  available: true,
 
-  start(): Promise<ChatBackend> {
-    throw new Error("not implemented");
+  async start(): Promise<ChatBackend> {
+    const broker = new TestMqttBroker();
+    await broker.start();
+    const backend: MqttBackend = {
+      url: broker.url,
+      get connectionCount() {
+        return broker.connectionCount;
+      },
+      get subscriptionCount() {
+        return broker.subscriptionCount;
+      },
+      killConnections: () => broker.killConnections(),
+      mute: () => broker.mute(),
+      stop: () => broker.stop(),
+    };
+    return backend;
   },
-  member(): ChatMember {
-    throw new Error("not implemented");
+
+  member(backend: ChatBackend, room: string): ChatMember {
+    const { url } = backend as MqttBackend;
+    const topic = `chat/${room}`;
+    const client = new MqttWebSocketClient({ brokerURL: url, reconnect });
+
+    return {
+      connect: () => client.connect(),
+      disconnect: () => client.disconnect(),
+      listen: () => client.subscribe(topic).pipe(map((message) => message.body)),
+      say: (text) => client.send(text, { topic }),
+      get state() {
+        return client.connectionState;
+      },
+      stateChanges$: client.connectionChanges$,
+    };
   },
 };
 
