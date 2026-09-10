@@ -93,6 +93,18 @@ export function createRoomTransport(
   }
 }
 
+/** 프로토콜별 서버 주소. 화면 문구와 실제 접속이 어긋나지 않게 한 곳에서 만든다. */
+export function serverAddress(protocol: Protocol): string {
+  switch (protocol) {
+    case "stomp":
+      return brokerURL;
+    case "window":
+      return echoURL;
+    case "mqtt":
+      return mqttURL;
+  }
+}
+
 /** 방 이름이 실제로 어떤 주소가 되는지. 화면 표시와 전송이 같은 계산을 쓰도록 여기 한 곳에 둔다. */
 export function roomAddress(protocol: Protocol, room: string): string {
   switch (protocol) {
@@ -111,6 +123,7 @@ function stompTransport(room: string): RoomTransport {
     brokerURL,
     connectHeaders: { login, passcode },
     reconnect,
+    revalidateDestination: "/topic/ws-pack.revalidate",
   });
 
   return {
@@ -173,7 +186,12 @@ function workerConfig(protocol: Protocol, room: string): WorkerClientConfig {
     case "stomp":
       return {
         protocol: "stomp",
-        options: { brokerURL, connectHeaders: { login, passcode }, reconnect },
+        options: {
+          brokerURL,
+          connectHeaders: { login, passcode },
+          reconnect,
+          revalidateDestination: "/topic/ws-pack.revalidate",
+        },
       };
     case "window":
       return { protocol: "window", options: { url: roomAddress("window", room), reconnect } };

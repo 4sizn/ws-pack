@@ -33,3 +33,45 @@ input,
 textarea {
   font: inherit;
 }
+
+/* 기기에서 렌더가 죽었을 때 이유를 보여주는 자리 */
+.failure {
+  margin: 16px;
+  padding: 12px;
+  border-radius: 8px;
+  background: #fdecee;
+  color: #7a1f2b;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* 기기 점검 페이지 */
+#root table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 13px;
+}
+#root th,
+#root td {
+  border: 1px solid #d6dae0;
+  padding: 6px 8px;
+  text-align: left;
+}
+#root tr.통과 td {
+  background: #e8f7ee;
+}
+#root tr.실패 td {
+  background: #fdecee;
+}
+#root tr.건너뜀 td {
+  background: #f3f4f6;
+  color: #6b7280;
+}
+#root h1 {
+  font-size: 18px;
+}
+#root p {
+  font-size: 13px;
+}

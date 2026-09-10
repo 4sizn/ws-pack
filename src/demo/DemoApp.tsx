@@ -2,7 +2,7 @@ import { useState } from "react";
 import { supportedWorkerModes } from "../lib";
 import { ChatRoom } from "./components/ChatRoom";
 import { mockRooms } from "./data/mockRooms";
-import type { Protocol, TransportMode } from "./transport/roomTransport";
+import { type Protocol, serverAddress, type TransportMode } from "./transport/roomTransport";
 import type { ChatUser } from "./types";
 import "./styles/chat.css";
 
@@ -22,10 +22,11 @@ const protocolLabel: Record<Protocol, string> = {
   mqtt: "MQTT",
 };
 
+/** 힌트는 실제 접속 주소를 그대로 보여준다 — 다른 기기에서 열면 127.0.0.1 이 아니다. */
 const protocolHint: Record<Protocol, string> = {
-  stomp: "RabbitMQ web-stomp (ws://127.0.0.1:15674/ws) — bun run stomp:up",
-  window: "순수 WebSocket 에코 서버 (ws://127.0.0.1:8010) — bun run ws:server",
-  mqtt: "aedes MQTT 브로커 (ws://127.0.0.1:8011) — bun run mqtt:server",
+  stomp: `RabbitMQ web-stomp (${serverAddress("stomp")}) — bun run stomp:up`,
+  window: `순수 WebSocket 에코 서버 (${serverAddress("window")}) — bun run ws:server`,
+  mqtt: `aedes MQTT 브로커 (${serverAddress("mqtt")}) — bun run mqtt:server`,
 };
 
 /**
@@ -47,7 +48,7 @@ const modeHint: Record<TransportMode, string> = {
 
 export function DemoApp() {
   const [protocol, setProtocol] = useState<Protocol>("stomp");
-  // 이 기기에서 쓸 수 있는 모드만 고를 수 있게 한다. iOS Safari 에는 SharedWorker 가 없다.
+  // 이 기기에서 쓸 수 있는 모드만 고를 수 있게 한다. SharedWorker 가 없는 브라우저가 있다.
   const available = supportedWorkerModes();
   const [mode, setMode] = useState<TransportMode>(available[0]);
   const [rooms, setRooms] = useState<Rooms>(separated);

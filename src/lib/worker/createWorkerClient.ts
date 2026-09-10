@@ -45,8 +45,8 @@ export interface WorkerClientSelection {
  * 쓸 수 있는 모드를 골라 클라이언트를 만든다.
  *
  * 자동으로 내려가되 **결과를 숨기지 않는다**: 어떤 모드가 선택됐고 앞의 후보를 왜 건넜는지
- * 반환값에 담는다. iOS Safari 처럼 SharedWorker 가 없는 환경에서 조용히 강등되면,
- * 소비자는 탭 사이 공유가 사라진 걸 모른 채 그대로 쓰게 된다.
+ * 반환값에 담는다. SharedWorker 가 없는 환경에서 조용히 강등되면, 소비자는 탭 사이 공유가
+ * 사라진 걸 모른 채 그대로 쓰게 된다.
  */
 export function createWorkerClient(options: CreateWorkerClientOptions): WorkerClientSelection {
   const prefer = options.prefer ?? ["shared", "dedicated", "main"];
@@ -79,7 +79,8 @@ function unavailable(mode: WorkerMode, options: CreateWorkerClientOptions): stri
   if (mode === "main") return undefined;
   if (!options.workerUrl) return "워커 스크립트 주소(workerUrl)가 없다";
   if (mode === "shared" && typeof SharedWorker === "undefined") {
-    // iOS Safari 가 대표적이다. 탭 사이 공유가 불가능하다는 뜻이지 워커 자체가 없는 건 아니다.
+    // 탭 사이 공유가 불가능하다는 뜻이지 워커 자체가 없는 건 아니다.
+    // (Safari 16 이전, 일부 웹뷰와 임베디드 브라우저가 여기 해당한다. iOS 26 Safari 는 지원한다 — 기기 점검으로 확인.)
     return "이 환경에 SharedWorker 가 없다";
   }
   if (mode === "dedicated" && typeof Worker === "undefined") {
