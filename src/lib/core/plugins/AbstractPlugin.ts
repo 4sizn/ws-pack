@@ -66,6 +66,8 @@ export interface WebSocketMonitorHandlers {
   onAfterConnect?(): void | Promise<void>;
   onBeforeDisconnect?(): void | Promise<void>;
   onAfterDisconnect?(): void | Promise<void>;
+  /** connect() 실패, 또는 연결 후 어댑터가 보고하는 런타임 에러 */
+  onError?(error: Error): void | Promise<void>;
 }
 
 /**
@@ -114,5 +116,12 @@ export class WebSocketMonitorPlugin extends AbstractPlugin {
    */
   public async onAfterDisconnect(): Promise<void> {
     await this.#handlers.onAfterDisconnect?.();
+  }
+
+  /**
+   * connect() 실패, 또는 연결 후 어댑터가 보고하는 런타임 에러 발생 시 호출되는 훅
+   */
+  public async onError(error: Error): Promise<void> {
+    await this.#handlers.onError?.(error);
   }
 }

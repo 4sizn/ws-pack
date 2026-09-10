@@ -78,7 +78,10 @@ export abstract class WebSocketController<TMessage = string> extends AbstractCon
     try {
       this.adapter ??= this.createAdapter(options);
       this.adapter.onMessage((data) => this.#messageSubject.next(data));
-      this.adapter.onError((error) => this.#errorSubject.next(error));
+      this.adapter.onError(async (error) => {
+        this.#errorSubject.next(error);
+        await this.dispatchError(error);
+      });
 
       await this.dispatch("onBeforeConnect");
       await this.adapter.connect();
@@ -88,7 +91,9 @@ export abstract class WebSocketController<TMessage = string> extends AbstractCon
     } catch (error) {
       // 실패 시 IDLE로 되돌려서 다음 connect() 재시도를 막지 않는다.
       this.#connectionState$.next(ConnectionState.IDLE);
-      this.#errorSubject.next(error instanceof Error ? error : new Error(String(error)));
+      const normalizedError = error instanceof Error ? error : new Error(String(error));
+      this.#errorSubject.next(normalizedError);
+      await this.dispatchError(normalizedError);
       throw error;
     }
   }
@@ -164,6 +169,14 @@ export abstract class WebSocketController<TMessage = string> extends AbstractCon
       }
     }
   }
+
+  private async dispatchError(error: Error): Promise<void> {
+    for (const plugin of this.#plugins.values()) {
+      if (plugin instanceof WebSocketMonitorPlugin) {
+        await plugin.onError?.(error);
+      }
+    }
+  }
 }
 
 export class WindowWebSocketController extends WebSocketController<string> {
@@ -190,7 +203,7 @@ export class MqttWebSocketController extends WebSocketController<string> {
   }
 }
 
-export type RecoonectConfig = {
+export type ReconnectConfig = {
   maxReconnectAttempts: number;
   reconnectDelay: number;
 };
