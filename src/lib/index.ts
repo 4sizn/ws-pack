@@ -1,5 +1,13 @@
+export type { IWebSocketClientAdapter, SendArgs } from "./core/adapters/WebSocketClientAdapter";
+export { WebSocketClientAdapter } from "./core/adapters/WebSocketClientAdapter";
 export type { DisconnectInfo, SocketCloseInfo } from "./core/CloseInfo";
 export { ConnectionState } from "./core/ConnectionState";
+export {
+  MqttWebSocketController,
+  StompWebSocketController,
+  WebSocketController,
+  WindowWebSocketController,
+} from "./core/controllers/NetworkController";
 export { MqttWebsocketError } from "./core/errors/MqttWebsocketError";
 export { StompStompError } from "./core/errors/StompStompError";
 export { StompWebsocketError } from "./core/errors/StompWebsocketError";
