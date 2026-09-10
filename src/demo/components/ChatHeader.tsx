@@ -15,35 +15,38 @@ const stateLabel: Record<ConnectionState, string> = {
 interface ChatHeaderProps {
   title: string;
   memberCount: number;
-  destination: string;
+  room: string;
+  /** 방 이름이 프로토콜에 따라 바뀐 실제 접속 대상 */
+  address: string;
   connection: ConnectionState;
   reconnect: ReconnectInfo;
   onConnect: () => void;
   onDisconnect: () => void;
-  onDestinationChange: (destination: string) => void;
+  onRoomChange: (room: string) => void;
 }
 
 export function ChatHeader({
   title,
   memberCount,
-  destination,
+  room,
+  address,
   connection,
   reconnect,
   onConnect,
   onDisconnect,
-  onDestinationChange,
+  onRoomChange,
 }: ChatHeaderProps) {
   // 타이핑 중에 매 글자마다 재연결하지 않도록, 커밋(Enter/blur) 시점에만 상위로 올린다.
-  const [draft, setDraft] = useState(destination);
-  useEffect(() => setDraft(destination), [destination]);
+  const [draft, setDraft] = useState(room);
+  useEffect(() => setDraft(room), [room]);
 
   const commit = () => {
     const next = draft.trim();
-    if (!next || next === destination) {
-      setDraft(destination);
+    if (!next || next === room) {
+      setDraft(room);
       return;
     }
-    onDestinationChange(next);
+    onRoomChange(next);
   };
 
   const canConnect = connection === ConnectionState.IDLE || connection === ConnectionState.CLOSED;
@@ -53,6 +56,7 @@ export function ChatHeader({
     connection === ConnectionState.RECONNECTING;
 
   const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.nativeEvent.isComposing) return;
     if (event.key === "Enter") {
       event.currentTarget.blur();
     }
@@ -77,10 +81,10 @@ export function ChatHeader({
 
       <div className="chat-header__row chat-header__row--sub">
         <input
-          className="chat-header__destination"
+          className="chat-header__room"
           value={draft}
           spellCheck={false}
-          aria-label={`${title} destination`}
+          aria-label={`${title} 방 이름`}
           onChange={(event) => setDraft(event.target.value)}
           onBlur={commit}
           onKeyDown={handleKeyDown}
@@ -102,6 +106,10 @@ export function ChatHeader({
           해제
         </button>
       </div>
+
+      <code className="chat-header__address" title={address}>
+        {address}
+      </code>
     </header>
   );
 }
