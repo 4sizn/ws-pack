@@ -9,6 +9,8 @@
     "build:lib": "tsc -p tsconfig.build.json && vite build -c vite.lib.config.ts",
     "check:dist": "bun scripts/check-dist.ts",
     "dev": "vite",
+    "e2e": "playwright test",
+    "e2e:install": "playwright install --with-deps chromium",
     "format": "biome format --write .",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
@@ -16,7 +18,7 @@
     "preview": "vite preview",
     "stomp:down": "docker compose -f docker-compose.test.yml down -v",
     "stomp:up": "docker compose -f docker-compose.test.yml up -d --wait",
-    "test": "bun test",
+    "test": "bun test ./test",
     "ws:server": "bun server/echo-server.ts"
   },
   "dependencies": {
@@ -28,6 +30,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.12",
+    "@playwright/test": "^1.63.0",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@types/ws": "^8.18.1",

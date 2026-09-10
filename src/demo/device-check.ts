@@ -12,8 +12,17 @@ import { createWorkerClient, randomId, supportedWorkerModes } from "../lib";
 const root = document.getElementById("root") as HTMLElement;
 const host = location.hostname || "127.0.0.1";
 
-const protocols = ["stomp", "window", "mqtt"] as const;
-type Protocol = (typeof protocols)[number];
+const allProtocols = ["stomp", "window", "mqtt"] as const;
+type Protocol = (typeof allProtocols)[number];
+
+/**
+ * `?protocols=window,mqtt` 로 검사 대상을 줄일 수 있다.
+ * 브로커를 띄우지 못하는 환경(예: STOMP 브로커 없는 CI)에서 나머지만 검사하기 위한 것이다.
+ */
+const requested = new URLSearchParams(location.search).get("protocols");
+const protocols = requested
+  ? allProtocols.filter((protocol) => requested.split(",").includes(protocol))
+  : allProtocols;
 
 interface Outcome {
   protocol: Protocol;
