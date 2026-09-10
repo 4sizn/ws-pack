@@ -1,10 +1,11 @@
-import type { IMessage } from "@stomp/stompjs";
+import type { IMessage, StompConfig } from "@stomp/stompjs";
 import { BehaviorSubject, distinctUntilChanged, type Observable, Subject } from "rxjs";
 import { AbstractController } from "../abstract/AbstractController";
 import { ConnectionState } from "../ConnectionState";
 import type { AbstractPlugin } from "../plugins/AbstractPlugin";
 import { WebSocketMonitorPlugin } from "../plugins/AbstractPlugin";
 import type { IWebSocketClientAdapter } from "../WebSocketClient";
+import { StompWebSocketClientAdapter } from "../WebSocketClient";
 
 type PluginHook = "onBeforeConnect" | "onAfterConnect" | "onBeforeDisconnect" | "onAfterDisconnect";
 
@@ -64,11 +65,12 @@ export abstract class WebSocketController<TMessage = string> extends AbstractCon
 
   /**
    * 프로토콜별 Adapter 생성. 각 서브클래스(Stomp/Window/Mqtt)가 자기 Adapter를 만든다.
+   * 연결 옵션은 각 서브클래스 생성자에서 이미 받아 저장해뒀으므로 여기선 인자가 없다.
    * 구조 관계: Client -> Controller -> Adapter. Controller만 Adapter의 구체 클래스를 안다.
    */
-  protected abstract createAdapter(options: unknown): IWebSocketClientAdapter<unknown, TMessage>;
+  protected abstract createAdapter(): IWebSocketClientAdapter<unknown, TMessage>;
 
-  public async connect(options: unknown): Promise<void> {
+  public async connect(): Promise<void> {
     // 이미 연결 중이거나 연결된 상태면 재호출 무시 (adapter.connect() 중복 실행 방지)
     if (this.connectionState !== ConnectionState.IDLE) {
       return;
@@ -76,7 +78,7 @@ export abstract class WebSocketController<TMessage = string> extends AbstractCon
 
     this.#connectionState$.next(ConnectionState.CONNECTING);
     try {
-      this.adapter ??= this.createAdapter(options);
+      this.adapter ??= this.createAdapter();
       this.adapter.onMessage((data) => this.#messageSubject.next(data));
       this.adapter.onError(async (error) => {
         this.#errorSubject.next(error);
@@ -182,7 +184,12 @@ export abstract class WebSocketController<TMessage = string> extends AbstractCon
 export class WindowWebSocketController extends WebSocketController<string> {
   public readonly name = "WindowWebSocketController";
 
-  protected createAdapter(_options: unknown): IWebSocketClientAdapter<unknown, string> {
+  // TODO: WindowWebSocketClientAdapter 구현되면 this.options로 실제 생성하도록 연결
+  constructor(_options: unknown) {
+    super();
+  }
+
+  protected createAdapter(): IWebSocketClientAdapter<unknown, string> {
     throw new Error("Method not implemented.");
   }
 }
@@ -190,15 +197,24 @@ export class WindowWebSocketController extends WebSocketController<string> {
 export class StompWebSocketController extends WebSocketController<IMessage> {
   public readonly name = "StompWebSocketController";
 
-  protected createAdapter(_options: unknown): IWebSocketClientAdapter<unknown, IMessage> {
-    throw new Error("Method not implemented.");
+  constructor(private readonly options: StompConfig) {
+    super();
+  }
+
+  protected createAdapter(): IWebSocketClientAdapter<unknown, IMessage> {
+    return new StompWebSocketClientAdapter(this.options);
   }
 }
 
 export class MqttWebSocketController extends WebSocketController<string> {
   public readonly name = "MqttWebSocketController";
 
-  protected createAdapter(_options: unknown): IWebSocketClientAdapter<unknown, string> {
+  // TODO: MqttWebSocketClientAdapter 구현되면 this.options로 실제 생성하도록 연결
+  constructor(_options: unknown) {
+    super();
+  }
+
+  protected createAdapter(): IWebSocketClientAdapter<unknown, string> {
     throw new Error("Method not implemented.");
   }
 }

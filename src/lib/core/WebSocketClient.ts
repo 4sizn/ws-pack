@@ -56,15 +56,15 @@ export interface WindowWebSocketClientOptions {
   plugins?: AbstractPlugin[];
 }
 
-export class WebSocketClient<C, TMessage = string> {
+export class WebSocketClient<TMessage = string> {
   #controller: WebSocketController<TMessage>;
 
   constructor(controller: WebSocketController<TMessage>) {
     this.#controller = controller;
   }
 
-  public connect(config: C): Promise<void> {
-    return this.#controller.connect(config);
+  public connect(): Promise<void> {
+    return this.#controller.connect();
   }
 
   public disconnect(): Promise<void> {
@@ -100,24 +100,22 @@ export class WebSocketClient<C, TMessage = string> {
   }
 }
 
-export class WindowWebSocketClient extends WebSocketClient<WindowWebSocketClientOptions, string> {
-  // TODO: options를 WindowWebSocketController 생성자로 전달 (createAdapter 연결은 다음 단계)
-  constructor(_options: WindowWebSocketClientOptions) {
-    super(new WindowWebSocketController());
+export class WindowWebSocketClient extends WebSocketClient<string> {
+  constructor(options: WindowWebSocketClientOptions) {
+    super(new WindowWebSocketController(options));
   }
 }
 
-export class StompWebSocketClient extends WebSocketClient<StompConfig, IMessage> {
-  // TODO: options를 StompWebSocketController 생성자로 전달 (createAdapter 연결은 다음 단계)
-  constructor(_options: StompConfig) {
-    super(new StompWebSocketController());
+export class StompWebSocketClient extends WebSocketClient<IMessage> {
+  constructor(options: StompConfig) {
+    super(new StompWebSocketController(options));
   }
 }
 
-export class MqttWebSocketClient extends WebSocketClient<unknown, string> {
+export class MqttWebSocketClient extends WebSocketClient<string> {
   // TODO: Mqtt 옵션 타입 정의 + MqttWebSocketClientAdapter 구현 필요
-  constructor(_options: unknown) {
-    super(new MqttWebSocketController());
+  constructor(options: unknown) {
+    super(new MqttWebSocketController(options));
   }
 }
 
@@ -156,6 +154,11 @@ export class StompWebSocketClientAdapter extends WebSocketClientAdapter<
   StompConfig,
   IMessage
 > {
+  // TODO: 실제 stompjs Client 생성 시 이 옵션을 사용한다 (connect()가 아직 구현 안 됨)
+  constructor(_options: StompConfig) {
+    super();
+  }
+
   public connect(_config?: StompConfig): Promise<void> {
     throw new Error("Method not implemented.");
   }
