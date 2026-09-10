@@ -69,6 +69,16 @@ const reconnect = {
 };
 
 /**
+ * 순수 WebSocket 용 하트비트. STOMP·MQTT 는 프로토콜이 알아서 하지만 이쪽은 서버와 약속해야 한다.
+ * 데모 에코 서버는 받은 것을 그대로 돌려주므로 보낸 ping 이 곧 응답이 된다.
+ */
+const heartbeat = {
+  intervalMs: 15_000,
+  timeoutMs: 5_000,
+  ping: "__ws-pack-ping__",
+};
+
+/**
  * 방 하나당 클라이언트 인스턴스 하나. 인스턴스끼리 소켓/구독/재연결 상태를 전혀 공유하지 않는다.
  *
  * `room` 은 프로토콜에 따라 다르게 주소로 바뀐다:
@@ -143,7 +153,7 @@ function stompTransport(room: string): RoomTransport {
 
 function windowTransport(room: string): RoomTransport {
   const url = roomAddress("window", room);
-  const client = new WindowWebSocketClient({ url, reconnect });
+  const client = new WindowWebSocketClient({ url, reconnect, heartbeat });
 
   return {
     connect: () => client.connect(),
@@ -194,7 +204,10 @@ function workerConfig(protocol: Protocol, room: string): WorkerClientConfig {
         },
       };
     case "window":
-      return { protocol: "window", options: { url: roomAddress("window", room), reconnect } };
+      return {
+        protocol: "window",
+        options: { url: roomAddress("window", room), reconnect, heartbeat },
+      };
     case "mqtt":
       return { protocol: "mqtt", options: { brokerURL: mqttURL, reconnect } };
   }

@@ -1,5 +1,6 @@
 export type { IWebSocketClientAdapter, SendArgs } from "./core/adapters/WebSocketClientAdapter";
 export { WebSocketClientAdapter } from "./core/adapters/WebSocketClientAdapter";
+export type { WindowHeartbeatConfig } from "./core/adapters/WindowWebSocketClientAdapter";
 export type { DisconnectInfo, SocketCloseInfo } from "./core/CloseInfo";
 export { ConnectionState } from "./core/ConnectionState";
 export {
