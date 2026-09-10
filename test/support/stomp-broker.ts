@@ -97,7 +97,21 @@ export class TestStompBroker {
     this.#mute = true;
   }
 
+  /** 다시 응답하게 되돌린다. 무응답 뒤의 회복까지 시험하기 위한 것이다. */
+  unmute(): void {
+    this.#mute = false;
+  }
+
   #handle(session: Session, frame: Frame): void {
+    // 어느 프레임에나 receipt 헤더를 붙일 수 있고, 서버는 처리 후 RECEIPT 를 돌려준다 (STOMP 1.2).
+    // 이 왕복이 revalidate() 의 근거라서 브로커도 그대로 구현한다.
+    const receipt = frame.headers.receipt;
+    const acknowledge = () => {
+      if (receipt && frame.command !== "DISCONNECT") {
+        this.#send(session, "RECEIPT", { "receipt-id": receipt }, "");
+      }
+    };
+
     switch (frame.command) {
       case "CONNECT":
       case "STOMP":
@@ -108,15 +122,18 @@ export class TestStompBroker {
       case "SUBSCRIBE": {
         const { id, destination } = frame.headers;
         if (id && destination) session.subscriptions.set(id, destination);
+        acknowledge();
         return;
       }
 
       case "UNSUBSCRIBE":
         session.subscriptions.delete(frame.headers.id);
+        acknowledge();
         return;
 
       case "SEND":
         this.#fanout(frame.headers.destination, frame.body);
+        acknowledge();
         return;
 
       case "DISCONNECT": {

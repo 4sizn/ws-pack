@@ -213,6 +213,12 @@ export class MqttWebSocketClientAdapter
     }
     void client.endAsync(false).catch(() => {});
     await client.endAsync(true).catch(() => {});
+
+    // 스트림까지 확실히 끊는다. 상대가 응답을 멈춘 채 소켓만 살아 있는 경우(half-open),
+    // mqtt.js 의 강제 종료가 전송 버퍼를 비우지 못해 옛 연결이 남는다 — 그러면 재연결 뒤
+    // 브로커에 구독이 둘이 되어 같은 메시지가 두 번 배달된다.
+    const stream = (client as { stream?: { destroy?: () => void } }).stream;
+    stream?.destroy?.();
   }
 
   /**

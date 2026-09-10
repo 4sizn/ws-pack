@@ -32,6 +32,8 @@ export interface ChatBackend {
   killConnections(): void;
   /** 들어오는 요청에 일절 응답하지 않는다 (브로커 무응답 재현). */
   mute(): void;
+  /** 다시 응답하게 되돌린다. */
+  unmute(): void;
   stop(): Promise<void>;
 }
 
@@ -42,6 +44,8 @@ export interface ChatMember {
   /** 이 방의 메시지 본문 스트림. 연결 전에 불러도 되고, 재연결되면 다시 걸려야 한다. */
   listen(): Observable<string>;
   say(text: string): void;
+  /** 연결이 정말 살아 있는지 왕복으로 확인한다. */
+  revalidate(timeoutMs?: number): Promise<boolean>;
   readonly state: ConnectionState;
   readonly stateChanges$: Observable<ConnectionState>;
 }
@@ -85,6 +89,7 @@ export const stompDriver: ChatDriver = {
       },
       killConnections: () => broker.killConnections(),
       mute: () => broker.mute(),
+      unmute: () => broker.unmute(),
       stop: () => broker.stop(),
     };
     return backend;
@@ -93,13 +98,19 @@ export const stompDriver: ChatDriver = {
   member(backend: ChatBackend, room: string): ChatMember {
     const { url } = backend as StompBackend;
     const destination = `/topic/${room}`;
-    const client = new StompWebSocketClient({ brokerURL: url, reconnect });
+    const client = new StompWebSocketClient({
+      brokerURL: url,
+      reconnect,
+      // 왕복 확인용 destination. 아무도 구독하지 않는 이름이면 된다.
+      revalidateDestination: `/topic/${room}.revalidate`,
+    });
 
     return {
       connect: () => client.connect(),
       disconnect: () => client.disconnect(),
       listen: () => client.subscribe(destination).pipe(map((message) => message.body)),
       say: (text) => client.send(text, { destination }),
+      revalidate: (timeoutMs) => client.revalidate(timeoutMs),
       get state() {
         return client.connectionState;
       },
@@ -134,6 +145,7 @@ export const windowDriver: ChatDriver = {
       },
       killConnections: () => server.killConnections(),
       mute: () => server.mute(),
+      unmute: () => server.unmute(),
       stop: () => server.stop(),
     };
     return backend;
@@ -144,6 +156,8 @@ export const windowDriver: ChatDriver = {
     const client = new WindowWebSocketClient({
       url: `${url}/?room=${encodeURIComponent(room)}`,
       reconnect,
+      // 순수 WebSocket 은 프로토콜 ping 이 없다. 에코 서버가 그대로 돌려주므로 ping 이 곧 응답이다.
+      heartbeat: { intervalMs: 60_000, timeoutMs: 500, ping: "__ws-pack-ping__" },
     });
 
     return {
@@ -151,6 +165,7 @@ export const windowDriver: ChatDriver = {
       disconnect: () => client.disconnect(),
       listen: () => client.message$,
       say: (text) => client.send(text),
+      revalidate: (timeoutMs) => client.revalidate(timeoutMs),
       get state() {
         return client.connectionState;
       },
@@ -181,6 +196,7 @@ export const mqttDriver: ChatDriver = {
       },
       killConnections: () => broker.killConnections(),
       mute: () => broker.mute(),
+      unmute: () => broker.unmute(),
       stop: () => broker.stop(),
     };
     return backend;
@@ -196,6 +212,7 @@ export const mqttDriver: ChatDriver = {
       disconnect: () => client.disconnect(),
       listen: () => client.subscribe(topic).pipe(map((message) => message.body)),
       say: (text) => client.send(text, { topic }),
+      revalidate: (timeoutMs) => client.revalidate(timeoutMs),
       get state() {
         return client.connectionState;
       },

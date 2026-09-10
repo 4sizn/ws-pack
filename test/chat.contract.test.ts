@@ -159,6 +159,30 @@ for (const driver of drivers) {
       await waitFor(() => backend.connectionCount === 0, "주인 없는 연결 없음");
     });
 
+    it("연결이 살아 있으면 재검증이 통과한다", async () => {
+      const me = await join("room-a");
+
+      expect(await me.revalidate(2000)).toBe(true);
+      expect(me.state).toBe(ConnectionState.OPEN);
+    });
+
+    it("서버가 응답을 멈추면 재검증이 실패하고 다시 연결한다", async () => {
+      const me = await join("room-a");
+      const received = inbox(me.listen());
+      backend.mute();
+
+      // 소켓은 열려 있지만 상대가 답하지 않는다 — 모바일에서 흔한 죽은 연결의 모습이다.
+      expect(await me.revalidate(1000)).toBe(false);
+
+      backend.unmute();
+      await waitFor(() => me.state === ConnectionState.OPEN, "재검증 실패 후 재연결", 5000);
+
+      await readyToReceive(1);
+      me.say("다시 살아났습니다");
+      await waitFor(() => received.messages.length === 1, "재연결 후 수신", 3000);
+      received.close();
+    });
+
     it("서버가 응답하지 않아도 종료는 끝난다", async () => {
       const me = await join("room-a");
 
