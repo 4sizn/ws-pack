@@ -239,7 +239,8 @@ export abstract class WebSocketController<
     if (this.connectionState !== ConnectionState.OPEN) {
       if (this.connectionState === ConnectionState.CLOSED) {
         this.#reconnectAttempts = 0;
-        void this.connect();
+        // 오류는 error$ / maxReconnectReached$ 로 이미 나가므로 여기선 조용히 넘긴다.
+        void this.connect().catch(() => {});
       }
       return false;
     }
