@@ -21,7 +21,11 @@ export default defineConfig({
     baseURL: "http://127.0.0.1:5199",
     trace: "retain-on-failure",
   },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  projects: [
+    { name: "chromium", use: { ...devices["Desktop Chrome"] } },
+    { name: "firefox", use: { ...devices["Desktop Firefox"] } },
+    { name: "webkit", use: { ...devices["Desktop Safari"] } },
+  ],
   webServer: [
     // WebSocket 전용 서버라 HTTP 응답으로는 준비 여부를 못 본다(426 을 준다).
     // 포트가 열리는 것으로 판단한다.

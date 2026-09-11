@@ -76,7 +76,7 @@ function unavailable(mode: WorkerMode, options: CreateWorkerClientOptions): stri
   if (!options.workerUrl) return "워커 스크립트 주소(workerUrl)가 없다";
   if (mode === "shared" && typeof SharedWorker === "undefined") {
     // 탭 사이 공유가 불가능하다는 뜻이지 워커 자체가 없는 건 아니다.
-    // (Safari 16 이전, 일부 웹뷰와 임베디드 브라우저가 여기 해당한다. iOS 26 Safari 는 지원한다 — 기기 점검으로 확인.)
+    // (iOS Safari 15 이하와 일부 인앱 웹뷰에서 실제로 확인했다.)
     return "이 환경에 SharedWorker 가 없다";
   }
   if (mode === "dedicated" && typeof Worker === "undefined") {
