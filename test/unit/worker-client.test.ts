@@ -59,16 +59,24 @@ const config: WorkerClientConfig = {
   options: { brokerURL: "ws://example.invalid/ws" },
 };
 
-function pair() {
+function pair(
+  options: {
+    hub?: ConstructorParameters<typeof WorkerHub>[1];
+    page?: { pingIntervalMs?: number };
+  } = {},
+) {
   const channel = new MessageChannel();
   let client!: FakeHubClient;
   const hub = new WorkerHub(() => {
     client = new FakeHubClient();
     return client;
-  });
+  }, options.hub);
   hub.attach(channel.port2 as unknown as Parameters<typeof hub.attach>[0]);
 
-  const page = new WorkerWebSocketClient(channel.port1 as MessagePort, config, { key: "shared" });
+  const page = new WorkerWebSocketClient(channel.port1 as MessagePort, config, {
+    key: "shared",
+    ...options.page,
+  });
   return {
     page,
     hub,
@@ -179,6 +187,98 @@ describe("워커 클라이언트 왕복", () => {
 
     expect(hub.connectionCount).toBe(0);
     expect(session.worker.disconnects).toBe(1);
+    close();
+  });
+
+  /**
+   * 탭이 얼어 있는 동안 허브가 손잡이를 걷어낼 수 있다(모바일 백그라운드에서 타이머가 멈춘다).
+   * 깨어난 페이지는 `stale` 을 받고 스스로 다시 열어야 한다 — 소비자가 들고 있는 구독과
+   * 연결 의사가 그대로 살아나는지가 핵심이다.
+   */
+  it("stale 을 받으면 손잡이와 구독과 연결 의사를 되살린다", async () => {
+    let now = 0;
+    const session = pair({ hub: { staleAfterMs: 1000, now: () => now } });
+    const { page, hub, close } = session;
+
+    await page.connect();
+    const received: string[] = [];
+    const subscription = page.subscribe("/topic/x").subscribe((m) => received.push(m.body));
+    await delay(10);
+    expect(hub.connectionCount).toBe(1);
+
+    // 탭이 얼어 ping 이 끊긴다 → 허브가 걷어낸다
+    now = 1001;
+    hub.sweep();
+    await delay(20);
+
+    // 페이지가 깨어나 stale 을 읽고 다시 열었다
+    expect(hub.connectionCount).toBe(1);
+    expect(page.connectionState).toBe(ConnectionState.OPEN);
+
+    // 되살아난 구독으로 메시지가 흐른다
+    session.worker.topic$.next({ body: "돌아왔다", destination: "/topic/x" });
+    await delay(10);
+    expect(received).toEqual(["돌아왔다"]);
+
+    subscription.unsubscribe();
+    page.destroy();
+    close();
+  });
+
+  it("연결을 원하지 않았다면 되살릴 때 연결하지 않는다", async () => {
+    let now = 0;
+    const session = pair({ hub: { staleAfterMs: 1000, now: () => now } });
+    const { page, hub, close } = session;
+
+    await delay(10); // open 만 하고 connect 는 하지 않는다
+    now = 1001;
+    hub.sweep();
+    await delay(20);
+
+    expect(hub.handleCount).toBe(1);
+    expect(session.worker.connects).toBe(0);
+    page.destroy();
+    close();
+  });
+
+  it("ping 이 도는 동안에는 걷어내지 않는다", async () => {
+    let now = 0;
+    const session = pair({
+      hub: { staleAfterMs: 1000, now: () => now },
+      page: { pingIntervalMs: 20 },
+    });
+    const { page, hub, close } = session;
+
+    await page.connect();
+    now = 900;
+    await delay(60); // ping 이 최소 한 번은 건너간다
+
+    now = 1500; // open 시각으로부터는 넘겼지만 마지막 ping 으로부터는 아니다
+    hub.sweep();
+    await delay(10);
+
+    expect(hub.handleCount).toBe(1);
+    expect(session.worker.disconnects).toBe(0);
+    page.destroy();
+    close();
+  });
+
+  it("destroy() 는 ping 도 멈춘다", async () => {
+    let now = 0;
+    const session = pair({
+      hub: { staleAfterMs: 1000, now: () => now },
+      page: { pingIntervalMs: 20 },
+    });
+    const { page, hub, close } = session;
+
+    await page.connect();
+    page.destroy();
+    await delay(60);
+
+    expect(hub.handleCount).toBe(0);
+    now = 1001;
+    hub.sweep();
+    expect(hub.handleCount).toBe(0);
     close();
   });
 });

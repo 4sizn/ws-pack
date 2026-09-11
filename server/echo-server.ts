@@ -1,3 +1,4 @@
+import { createServer } from "node:http";
 import WebSocket from "ws";
 
 /**
@@ -18,8 +19,30 @@ const config: ServerConfig = {
   host: "0.0.0.0",
 };
 
-const wss = new WebSocket.Server(config);
 const rooms = new Map<WebSocket, string>();
+
+/**
+ * 열려 있는 소켓 수를 알려주는 창구: `GET /count?room=<name>`.
+ *
+ * SharedWorker 가 탭 사이에서 소켓을 하나로 묶는지, 사라진 탭의 소켓을 실제로 놓는지는
+ * 화면만 봐서는 알 수 없다. 테스트가 추측 대신 세도록 서버가 직접 센다.
+ */
+const http = createServer((request, response) => {
+  const url = new URL(request.url ?? "/", "http://localhost");
+  if (url.pathname !== "/count") {
+    response.statusCode = 404;
+    response.end();
+    return;
+  }
+  const room = url.searchParams.get("room");
+  const count = [...rooms.values()].filter((joined) => room === null || joined === room).length;
+  response.setHeader("content-type", "application/json");
+  response.setHeader("access-control-allow-origin", "*");
+  response.end(JSON.stringify({ room, count }));
+});
+
+const wss = new WebSocket.Server({ server: http });
+http.listen(config.port, config.host);
 
 console.log(`WebSocket 서버가 ws://localhost:${config.port} 에서 실행 중입니다`);
 

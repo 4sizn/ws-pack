@@ -48,6 +48,7 @@ export {
   type WorkerCommand,
   type WorkerEvent,
   WorkerHub,
+  type WorkerHubOptions,
   type WorkerMode,
   WorkerWebSocketClient,
   type WorkerWebSocketClientOptions,

@@ -19,6 +19,14 @@ export interface WorkerWebSocketClientOptions {
    * 기본값은 설정을 직렬화한 값이라, 같은 설정이면 저절로 공유된다.
    */
   key?: string;
+  /**
+   * 살아 있다는 신호를 워커로 보내는 주기(ms). 기본 15000. `0` 이면 보내지 않는다.
+   *
+   * SharedWorker 는 포트가 닫혔다는 이벤트를 주지 않는다 — 탭이 크래시하거나 모바일에서
+   * 회수되면 `destroy()` 가 불리지 않고, 허브는 그 손잡이를 영원히 들고 있게 된다.
+   * 이 신호가 끊기면 허브가 손잡이를 걷어내고 아무도 안 쓰는 소켓을 닫는다.
+   */
+  pingIntervalMs?: number;
 }
 
 /**
@@ -45,7 +53,14 @@ export class WorkerWebSocketClient
     string,
     { resolve: (alive: boolean) => void; reject: (error: Error) => void }
   >();
-  readonly #subscribers = new Map<string, Subject<WireMessage>>();
+  /** 구독. `stale` 이후 같은 구독을 다시 열 수 있게 destination 까지 들고 있는다. */
+  readonly #subscriptions = new Map<
+    string,
+    { subject: Subject<WireMessage>; destination: string; options?: unknown }
+  >();
+  readonly #config: WorkerClientConfig;
+  readonly #key: string;
+  readonly #pingIntervalMs: number;
 
   readonly #connectionState$ = new Subject<ConnectionState>();
   readonly #connectSubject = new Subject<void>();
@@ -59,6 +74,13 @@ export class WorkerWebSocketClient
   #reconnect: ReconnectInfo = { attempts: 0, maxAttempts: 0, isReconnecting: false };
   #commands = 0;
   #destroyed = false;
+  /**
+   * 이 페이지가 연결을 원하는가. 허브의 `wanted` 와 같은 뜻이고, 손잡이를 다시 열 때 복원한다.
+   * 연결 상태(`#state`)와 다른 값이다 — 원하지만 아직 끊겨 있을 수 있다.
+   */
+  #wanted = false;
+  #ping: ReturnType<typeof setInterval> | undefined;
+  #lifecycle: (() => void) | undefined;
 
   constructor(
     target: Worker | SharedWorker | MessagePort,
@@ -66,25 +88,27 @@ export class WorkerWebSocketClient
     options: WorkerWebSocketClientOptions = {},
   ) {
     this.#port = toPort(target);
+    this.#config = config;
+    this.#key = options.key ?? JSON.stringify(config);
+    this.#pingIntervalMs = options.pingIntervalMs ?? 15_000;
     this.#port.addEventListener("message", (event) => this.#receive(event.data as WorkerEvent));
     this.#port.start?.();
 
-    this.#post({
-      type: "open",
-      handle: this.#handle,
-      key: options.key ?? JSON.stringify(config),
-      config,
-    });
+    this.#post({ type: "open", handle: this.#handle, key: this.#key, config });
+    this.#startPing();
+    this.#watchPageLifecycle();
   }
 
   public connect(): Promise<void> {
     if (this.#destroyed) {
       return Promise.reject(new Error("WorkerWebSocketClient has been destroyed"));
     }
+    this.#wanted = true;
     return this.#request((command) => ({ type: "connect", handle: this.#handle, command }));
   }
 
   public disconnect(): Promise<void> {
+    this.#wanted = false;
     return this.#request((command) => ({ type: "disconnect", handle: this.#handle, command }));
   }
 
@@ -120,7 +144,7 @@ export class WorkerWebSocketClient
     return new Observable<WireMessage>((observer) => {
       const id = randomId();
       const subject = new Subject<WireMessage>();
-      this.#subscribers.set(id, subject);
+      this.#subscriptions.set(id, { subject, destination, options });
       const inner = subject.subscribe(observer);
 
       this.#post({
@@ -133,7 +157,7 @@ export class WorkerWebSocketClient
 
       return () => {
         inner.unsubscribe();
-        this.#subscribers.delete(id);
+        this.#subscriptions.delete(id);
         this.#post({ type: "unsubscribe", handle: this.#handle, subscription: id });
       };
     });
@@ -147,9 +171,13 @@ export class WorkerWebSocketClient
     if (this.#destroyed) return;
     this.#destroyed = true;
 
+    this.#stopPing();
+    this.#lifecycle?.();
+    this.#lifecycle = undefined;
+
     this.#post({ type: "release", handle: this.#handle });
-    for (const subject of this.#subscribers.values()) subject.complete();
-    this.#subscribers.clear();
+    for (const entry of this.#subscriptions.values()) entry.subject.complete();
+    this.#subscriptions.clear();
 
     this.#connectionState$.complete();
     this.#connectSubject.complete();
@@ -259,7 +287,7 @@ export class WorkerWebSocketClient
         this.#messageSubject.next(event.message);
         return;
       case "subscription":
-        this.#subscribers.get(event.subscription)?.next(event.message);
+        this.#subscriptions.get(event.subscription)?.subject.next(event.message);
         return;
       case "reconnect":
         this.#reconnect = event.info;
@@ -268,7 +296,83 @@ export class WorkerWebSocketClient
       case "exhausted":
         this.#exhaustedSubject.next();
         return;
+      case "stale":
+        // 허브가 이 손잡이를 걷어냈다. 페이지는 살아 있으므로 같은 아이디로 다시 연다.
+        this.#reopen();
+        return;
     }
+  }
+
+  /**
+   * 손잡이를 다시 연다. 걷어내진 뒤(`stale`)와 bfcache 복귀 뒤에 쓴다.
+   *
+   * 허브는 손잡이만 기억하므로 구독과 연결 의사는 페이지가 복원해야 한다.
+   * 스트림 객체는 그대로 둔다 — 소비자가 들고 있는 구독이 끊기면 안 된다.
+   */
+  #reopen(): void {
+    if (this.#destroyed) return;
+
+    this.#post({ type: "open", handle: this.#handle, key: this.#key, config: this.#config });
+    for (const [id, entry] of this.#subscriptions) {
+      this.#post({
+        type: "subscribe",
+        handle: this.#handle,
+        subscription: id,
+        destination: entry.destination,
+        options: entry.options,
+      });
+    }
+    if (this.#wanted) {
+      // 결과를 기다리는 호출자가 없다. 실패는 error$ 로 나간다.
+      this.#post({
+        type: "connect",
+        handle: this.#handle,
+        command: `${this.#handle}:reopen:${++this.#commands}`,
+      });
+    }
+    this.#startPing();
+  }
+
+  #startPing(): void {
+    if (this.#pingIntervalMs <= 0 || this.#ping !== undefined) return;
+    this.#ping = setInterval(() => {
+      this.#post({ type: "ping", handle: this.#handle });
+    }, this.#pingIntervalMs);
+    (this.#ping as { unref?: () => void }).unref?.();
+  }
+
+  #stopPing(): void {
+    if (this.#ping === undefined) return;
+    clearInterval(this.#ping);
+    this.#ping = undefined;
+  }
+
+  /**
+   * 페이지가 사라질 때 손잡이를 놓는다.
+   *
+   * `beforeunload` 가 아니라 `pagehide` 를 쓴다 — 모바일 사파리는 탭을 백그라운드로 보낼 때
+   * `beforeunload` 를 주지 않는다. bfcache 로 들어간 경우(`persisted`)에는 페이지가 되살아날
+   * 수 있으므로, 돌아오면 `pageshow` 에서 다시 연다.
+   */
+  #watchPageLifecycle(): void {
+    if (typeof addEventListener !== "function") return;
+
+    const hide = (event: PageTransitionEvent) => {
+      if (this.#destroyed) return;
+      this.#stopPing();
+      this.#post({ type: "release", handle: this.#handle });
+      if (!event.persisted) this.#lifecycle?.();
+    };
+    const show = (event: PageTransitionEvent) => {
+      if (event.persisted) this.#reopen();
+    };
+
+    addEventListener("pagehide", hide);
+    addEventListener("pageshow", show);
+    this.#lifecycle = () => {
+      removeEventListener("pagehide", hide);
+      removeEventListener("pageshow", show);
+    };
   }
 }
 

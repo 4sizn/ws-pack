@@ -4,11 +4,6 @@
   "workspaces": {
     "": {
       "name": "ws-pack",
-      "dependencies": {
-        "react": "^19.2.0",
-        "react-dom": "^19.2.0",
-        "rxjs": "^7.8.2",
-      },
       "devDependencies": {
         "@biomejs/biome": "^2.5.12",
         "@playwright/test": "^1.63.0",
@@ -19,6 +14,9 @@
         "@vitejs/plugin-react": "^5.0.0",
         "aedes": "^1.1.2",
         "mqtt": "^5.15.2",
+        "react": "^19.2.0",
+        "react-dom": "^19.2.0",
+        "rxjs": "^7.8.2",
         "typescript": "^5.9.0",
         "vite": "^7.1.0",
         "ws": "^8.21.3",

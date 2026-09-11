@@ -51,8 +51,25 @@ interface Connection {
 interface Handle {
   key: string;
   port: MessageLike;
+  /** 이 손잡이에서 마지막으로 소식이 온 시각(ms). 넘기면 죽은 것으로 본다. */
+  lastSeen: number;
   readonly streams: Subscription[];
   readonly subscriptions: Map<string, Subscription>;
+}
+
+export interface WorkerHubOptions {
+  /**
+   * 이 시간 동안 손잡이에서 아무 소식이 없으면 죽은 것으로 보고 걷어낸다. 기본 60000ms.
+   *
+   * 페이지는 `ping` 을 주기적으로 보내지만, 백그라운드 탭에서는 타이머가 조여진다
+   * (모바일 사파리는 아예 얼린다). 살아 있는 탭을 잘못 걷어내지 않도록 넉넉히 잡는다 —
+   * 잘못 걷어내도 페이지가 `stale` 을 받고 다시 열지만, 그 사이 메시지를 놓친다.
+   */
+  staleAfterMs?: number;
+  /** 걷어내기를 돌리는 주기. 기본 15000ms. 손잡이가 하나도 없으면 타이머도 없다. */
+  sweepIntervalMs?: number;
+  /** 시계. 테스트가 끼워 넣는다. 기본 `Date.now`. */
+  now?: () => number;
 }
 
 /**
@@ -67,9 +84,20 @@ export class WorkerHub {
   readonly #connections = new Map<string, Connection>();
   readonly #handles = new Map<string, Handle>();
   readonly #createClient: HubClientFactory;
+  readonly #staleAfterMs: number;
+  readonly #sweepIntervalMs: number;
+  readonly #now: () => number;
+  /** 걷어내기 타이머. 손잡이가 있을 때만 돈다. */
+  #sweeper: ReturnType<typeof setInterval> | undefined;
 
-  constructor(createClient: HubClientFactory = defaultClientFactory) {
+  constructor(
+    createClient: HubClientFactory = defaultClientFactory,
+    options: WorkerHubOptions = {},
+  ) {
     this.#createClient = createClient;
+    this.#staleAfterMs = options.staleAfterMs ?? 60_000;
+    this.#sweepIntervalMs = options.sweepIntervalMs ?? 15_000;
+    this.#now = options.now ?? Date.now;
   }
 
   /** 포트 하나를 붙인다. 포트가 보내는 명령을 처리하고, 포트가 닫히면 그 손잡이들을 정리한다. */
@@ -90,12 +118,17 @@ export class WorkerHub {
 
   /** 명령 하나를 처리한다. 포트 없이도 부를 수 있어 테스트가 쉽다. */
   public handle(command: WorkerCommand, port: MessageLike): void {
+    // 어떤 명령이든 그 손잡이가 살아 있다는 증거다. ping 은 주고받을 게 없을 때를 위한 것이다.
+    this.#touch(command.handle);
+
     switch (command.type) {
       case "open":
         this.#open(command.handle, command.key, command.config, port);
         return;
       case "release":
         this.#release(command.handle);
+        return;
+      case "ping":
         return;
       case "connect":
         void this.#connect(command.handle, command.command);
@@ -123,6 +156,26 @@ export class WorkerHub {
     return this.#connections.size;
   }
 
+  /** 지금 열려 있는 손잡이 수. 걷어내기가 실제로 도는지 확인하는 값. */
+  public get handleCount(): number {
+    return this.#handles.size;
+  }
+
+  /**
+   * 소식이 끊긴 손잡이를 걷어낸다. 타이머가 주기적으로 부르고, 테스트는 직접 부른다.
+   *
+   * 걷어내기 전에 `stale` 을 보낸다 — 포트가 진짜 죽었으면 아무도 못 받고, 얼어 있다 깨어난
+   * 페이지는 그걸 보고 같은 아이디로 다시 연다.
+   */
+  public sweep(): void {
+    const deadline = this.#now() - this.#staleAfterMs;
+    for (const [handleId, handle] of [...this.#handles]) {
+      if (handle.lastSeen > deadline) continue;
+      handle.port.postMessage({ type: "stale", handle: handleId } satisfies WorkerEvent);
+      this.#release(handleId);
+    }
+  }
+
   #open(handleId: string, key: string, config: WorkerClientConfig, port: MessageLike): void {
     if (this.#handles.has(handleId)) return;
 
@@ -133,8 +186,15 @@ export class WorkerHub {
     }
     connection.handles.add(handleId);
 
-    const handle: Handle = { key, port, streams: [], subscriptions: new Map() };
+    const handle: Handle = {
+      key,
+      port,
+      lastSeen: this.#now(),
+      streams: [],
+      subscriptions: new Map(),
+    };
     this.#handles.set(handleId, handle);
+    this.#startSweeping();
 
     const send = (event: WorkerEvent) => port.postMessage(event);
     const { client } = connection;
@@ -156,10 +216,30 @@ export class WorkerHub {
     );
   }
 
+  /** 손잡이가 살아 있다는 것을 기록한다. 모르는 손잡이는 조용히 넘긴다(open 이 아직 안 왔다). */
+  #touch(handleId: string): void {
+    const handle = this.#handles.get(handleId);
+    if (handle) handle.lastSeen = this.#now();
+  }
+
+  #startSweeping(): void {
+    if (this.#sweeper !== undefined) return;
+    this.#sweeper = setInterval(() => this.sweep(), this.#sweepIntervalMs);
+    // 워커가 이 타이머 하나 때문에 살아 있을 이유는 없다 (Node/Bun 환경에서만 의미가 있다).
+    (this.#sweeper as { unref?: () => void }).unref?.();
+  }
+
+  #stopSweeping(): void {
+    if (this.#sweeper === undefined) return;
+    clearInterval(this.#sweeper);
+    this.#sweeper = undefined;
+  }
+
   #release(handleId: string): void {
     const handle = this.#handles.get(handleId);
     if (!handle) return;
     this.#handles.delete(handleId);
+    if (this.#handles.size === 0) this.#stopSweeping();
 
     for (const stream of handle.streams) stream.unsubscribe();
     for (const subscription of handle.subscriptions.values()) subscription.unsubscribe();

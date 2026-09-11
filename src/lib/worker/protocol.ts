@@ -42,6 +42,11 @@ export type WorkerCommand =
   | { type: "open"; handle: string; key: string; config: WorkerClientConfig }
   /** 손잡이를 놓는다. 마지막 사용자가 놓으면 연결도 닫힌다. */
   | { type: "release"; handle: string }
+  /**
+   * 이 손잡이가 아직 살아 있다는 신호. SharedWorker 는 포트가 닫혔다는 이벤트를 주지 않아서,
+   * 탭이 크래시하면 `release` 가 영영 오지 않는다. 소식이 끊기면 허브가 손잡이를 걷어낸다.
+   */
+  | { type: "ping"; handle: string }
   | { type: "connect"; handle: string; command: string }
   | { type: "disconnect"; handle: string; command: string }
   | { type: "send"; handle: string; command: string; data: string; options?: unknown }
@@ -67,7 +72,12 @@ export type WorkerEvent =
   | { type: "message"; handle: string; message: WireMessage }
   | { type: "subscription"; handle: string; subscription: string; message: WireMessage }
   | { type: "reconnect"; handle: string; info: ReconnectInfo }
-  | { type: "exhausted"; handle: string };
+  | { type: "exhausted"; handle: string }
+  /**
+   * 소식이 끊겨 걷어낸 손잡이. 페이지가 살아 있었다면(백그라운드에서 타이머가 멈췄다거나)
+   * 같은 아이디로 다시 열면 된다 — 구독과 연결 의사는 페이지가 복원한다.
+   */
+  | { type: "stale"; handle: string };
 
 /**
  * 포트 하나. 전용 Worker 는 자기 자신이 포트이고, SharedWorker 는 connect 이벤트로 받은 MessagePort 다.
