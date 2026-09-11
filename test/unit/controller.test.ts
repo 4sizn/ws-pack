@@ -15,12 +15,16 @@ import { FakeAdapter, FakeController } from "../support/fake-adapter";
  * "연결 하나의 수명을 누가 소유하는가" 라는 규칙 자체가 시험 대상이다.
  */
 
-/** 재시도를 짧게 — 백오프 계산은 reconnect.test.ts 가 따로 본다. */
+/**
+ * 재시도를 짧게 — 백오프 계산은 reconnect.test.ts 가 따로 본다.
+ * 지터도 끈다. 여기서 보는 건 수명 규칙이라 대기 시간이 흔들리면 시험이 흔들린다.
+ */
 const fastRetry = {
   maxAttempts: 2,
   delay: 5,
   timeMode: ReconnectTimeMode.INTERVAL,
   maxDelay: 5,
+  jitter: false,
 };
 
 function setup(outcomes: Array<"ok" | "fail"> = []) {
