@@ -54,10 +54,16 @@ jobs:
       - name: Install browser
         run: bunx playwright install --with-deps chromium
 
-      # STOMP 는 도커 브로커가 필요해 여기서 빼고, 순수 WebSocket 과 MQTT 서버는
-      # playwright 설정이 직접 띄운다.
+      # STOMP 브로커는 도커로 띄운다. 서비스 컨테이너로는 web_stomp 플러그인을 켜는 명령을
+      # 줄 수 없어서, 로컬과 같은 compose 파일을 그대로 쓴다.
+      - name: Start STOMP broker
+        run: docker compose -f docker-compose.test.yml up -d --wait
+
+      # 순수 WebSocket 과 MQTT 서버는 playwright 설정이 직접 띄운다.
       - name: E2E
         run: bun run e2e
+        env:
+          E2E_STOMP: "1"
 
       - uses: actions/upload-artifact@v4
         if: failure()
