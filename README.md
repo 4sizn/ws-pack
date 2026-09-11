@@ -4,7 +4,7 @@
 연결을 페이지가 직접 들 수도 있고 **Worker · SharedWorker** 안에서 들 수도 있다.
 
 ```ts
-import { StompWebSocketClient } from "ws-pack";
+import { StompWebSocketClient } from "ws-pack/stomp";
 
 const client = new StompWebSocketClient({ brokerURL: "wss://broker.example/ws" });
 await client.connect();
@@ -22,16 +22,28 @@ client.send("안녕하세요", { destination: "/topic/room" });
 bun add ws-pack     # 또는 npm / pnpm / yarn
 ```
 
-런타임 의존성은 번들에 포함되지 않는다(`rxjs`, `@stomp/stompjs`, `mqtt`). 소비자 쪽 rxjs 와
-인스턴스가 갈리면 같은 Observable 이 서로 다른 구현으로 오간다.
+프로토콜 라이브러리는 **진입점이 나뉘어 있고 선택적 peer 의존**이다. 쓰는 것만 설치하면 된다.
+
+| import 경로 | 필요한 패키지 |
+| --- | --- |
+| `ws-pack` | 없음 (코어 + 순수 WebSocket) |
+| `ws-pack/stomp` | `@stomp/stompjs` |
+| `ws-pack/mqtt` | `mqtt` |
+
+`rxjs` 는 공통 peer 의존이다. 소비자 쪽 rxjs 와 인스턴스가 갈리면 같은 Observable 이 서로 다른
+구현으로 오간다.
+
+나눈 이유는 크기다. 브라우저 번들 기준 `mqtt` 는 360KB 가 넘어서, 순수 WebSocket 만 쓰는
+소비자가 그것을 받으면 안 된다. 코어 진입점이 프로토콜 라이브러리를 import 하지 않는다는 사실은
+`bun run check:dist` 가 번들을 읽어 확인한다.
 
 ## 프로토콜 고르기
 
-| 클래스 | 프로토콜 | 구독 | 보내기 |
+| 클래스 (import 경로) | 프로토콜 | 구독 | 보내기 |
 | --- | --- | --- | --- |
-| `StompWebSocketClient` | STOMP over WebSocket | `subscribe(destination, headers?)` | `send(body, { destination })` |
-| `WindowWebSocketClient` | 브라우저 내장 WebSocket | 없음 — 연결이 곧 채널, `message$` 로 받는다 | `send(text)` |
-| `MqttWebSocketClient` | MQTT over WebSocket | `subscribe(filter, options?)` — `+`/`#` 지원 | `send(payload, { topic })` |
+| `StompWebSocketClient` (`ws-pack/stomp`) | STOMP over WebSocket | `subscribe(destination, headers?)` | `send(body, { destination })` |
+| `WindowWebSocketClient` (`ws-pack`) | 브라우저 내장 WebSocket | 없음 — 연결이 곧 채널, `message$` 로 받는다 | `send(text)` |
+| `MqttWebSocketClient` (`ws-pack/mqtt`) | MQTT over WebSocket | `subscribe(filter, options?)` — `+`/`#` 지원 | `send(payload, { topic })` |
 
 `destination` 개념이 있는 프로토콜만 `subscribe` 를 가진다(`PubSubAble`). 순수 WebSocket 은
 연결 하나가 채널 하나라서 구독 단계가 없다.
@@ -112,8 +124,13 @@ SharedWorker 는 **탭이 여러 개여도 소켓 하나**를 쓴다.
 
 ```ts
 // 소비자의 워커 파일 (worker.ts)
-import "ws-pack/worker";
+import "ws-pack/worker";        // 허브 — 순수 WebSocket 포함
+import "ws-pack/worker/stomp";  // STOMP 를 쓸 때만
+import "ws-pack/worker/mqtt";   // MQTT 를 쓸 때만
 ```
+
+워커 진입점도 같은 이유로 나뉘어 있다. 등록하지 않은 프로토콜을 요청하면 무엇을 import 해야
+하는지 알려주며 실패한다 — 조용히 다른 프로토콜로 바꾸지 않는다.
 
 ```ts
 import { createWorkerClient } from "ws-pack";

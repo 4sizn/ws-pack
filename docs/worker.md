@@ -42,8 +42,13 @@ flowchart LR
 
 ```ts
 // 소비자의 워커 파일
-import "ws-pack/worker";
+import "ws-pack/worker";        // 허브 — 순수 WebSocket 포함
+import "ws-pack/worker/stomp";  // 이 워커가 STOMP 를 쓸 때만
+import "ws-pack/worker/mqtt";   // 이 워커가 MQTT 를 쓸 때만
 ```
+
+프로토콜 등록을 나눈 이유도 번들이다. 허브가 셋을 직접 참조하면 MQTT 만 쓰는 워커가 stompjs 를
+싣고 다닌다. 데모의 `src/demo/demo-worker.ts` 가 이 파일의 예시다.
 
 ## 구조화 복제라는 제약
 

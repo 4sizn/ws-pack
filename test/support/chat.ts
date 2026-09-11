@@ -1,11 +1,8 @@
 import { map, type Observable } from "rxjs";
 import type { ConnectionState } from "../../src/lib";
-import {
-  MqttWebSocketClient,
-  ReconnectTimeMode,
-  StompWebSocketClient,
-  WindowWebSocketClient,
-} from "../../src/lib";
+import { ReconnectTimeMode, WindowWebSocketClient } from "../../src/lib";
+import { MqttWebSocketClient } from "../../src/lib/mqtt";
+import { StompWebSocketClient } from "../../src/lib/stomp";
 import { TestEchoServer } from "./echo-server";
 import { TestMqttBroker } from "./mqtt-broker";
 import { TestStompBroker } from "./stomp-broker";

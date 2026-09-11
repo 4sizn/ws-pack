@@ -7,13 +7,9 @@ import type {
   WorkerClientConfig,
   WorkerMode,
 } from "../../lib";
-import {
-  MqttWebSocketClient,
-  ReconnectTimeMode,
-  StompWebSocketClient,
-  WindowWebSocketClient,
-  WorkerWebSocketClient,
-} from "../../lib";
+import { ReconnectTimeMode, WindowWebSocketClient, WorkerWebSocketClient } from "../../lib";
+import { MqttWebSocketClient } from "../../lib/mqtt";
+import { StompWebSocketClient } from "../../lib/stomp";
 
 /** 데모가 지원하는 프로토콜. 화면에서 전환하며 같은 시나리오를 확인한다. */
 export type Protocol = "stomp" | "window" | "mqtt";
@@ -213,7 +209,8 @@ function workerConfig(protocol: Protocol, room: string): WorkerClientConfig {
   }
 }
 
-const workerURL = new URL("../../lib/worker/socket-worker.ts", import.meta.url);
+// 소비자가 만든 워커 파일을 가리킨다 — 허브와 쓸 프로토콜 등록이 그 안에 있다.
+const workerURL = new URL("../demo-worker.ts", import.meta.url);
 
 /**
  * 페이지 전체가 워커 하나를 쓴다. 방마다 손잡이를 따로 열고, 워커 안에서 키로 연결을 구분한다.

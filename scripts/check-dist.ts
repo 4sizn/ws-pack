@@ -28,9 +28,7 @@ const api = await import(
   resolve(root, (pkg.exports as Record<string, { import: string }>)["."].import)
 );
 const expected = [
-  "StompWebSocketClient",
   "WindowWebSocketClient",
-  "MqttWebSocketClient",
   "WorkerWebSocketClient",
   "WorkerHub",
   "createWorkerClient",
@@ -43,9 +41,44 @@ for (const name of expected) {
   check(name in api, `공개 API 누락: ${name}`);
 }
 
-// 워커 진입점은 부수 효과 스크립트라 import 만 확인한다 (워커 밖에서는 self 가 없어 실행하지 않는다)
-const workerEntry = (pkg.exports as Record<string, { import: string }>)["./worker"].import;
-check(existsSync(resolve(root, workerEntry)), `워커 진입점 없음: ${workerEntry}`);
+// 프로토콜 진입점이 각자의 클라이언트를 내놓는가
+const stompApi = await import(resolve(root, "./dist/lib/stomp.js"));
+check("StompWebSocketClient" in stompApi, "ws-pack/stomp 에 StompWebSocketClient 없음");
+const mqttApi = await import(resolve(root, "./dist/lib/mqtt.js"));
+check("MqttWebSocketClient" in mqttApi, "ws-pack/mqtt 에 MqttWebSocketClient 없음");
+
+// 워커 진입점은 부수 효과 스크립트라 존재만 확인한다 (워커 밖에서는 self 가 없어 실행하지 않는다)
+for (const name of ["./worker", "./worker/stomp", "./worker/mqtt"]) {
+  const entry = (pkg.exports as Record<string, { import: string }>)[name]?.import;
+  check(Boolean(entry) && existsSync(resolve(root, entry)), `진입점 없음: ${name}`);
+}
+
+/**
+ * 진입점 분리의 핵심 약속: 코어와 워커 허브는 프로토콜 라이브러리를 끌어오지 않는다.
+ * 이게 깨지면 순수 WebSocket 만 쓰는 소비자도 stompjs 와 mqtt 를 받게 된다 —
+ * 타입 검사도 테스트도 통과하므로, 번들을 직접 읽어서 확인한다.
+ */
+const protocolLibraries = ["@stomp/stompjs", "mqtt"];
+const mustStayClean = ["./dist/lib/index.js", "./dist/lib/worker.js"];
+for (const file of mustStayClean) {
+  const source = await Bun.file(resolve(root, file)).text();
+  for (const library of protocolLibraries) {
+    check(
+      !new RegExp(`from\\s*["']${library.replace("/", "\\/")}["']`).test(source),
+      `${file} 가 ${library} 를 직접 import 한다 — 진입점 분리가 깨졌다`,
+    );
+  }
+}
+
+// 반대로 프로토콜 진입점은 자기 라이브러리를 가지고 있어야 한다
+const protocolEntries: Array<[string, string]> = [
+  ["./dist/lib/stomp.js", "@stomp/stompjs"],
+  ["./dist/lib/mqtt.js", "mqtt"],
+];
+for (const [file, library] of protocolEntries) {
+  const source = await Bun.file(resolve(root, file)).text();
+  check(source.includes(library), `${file} 에 ${library} 가 없다`);
+}
 
 if (failures.length > 0) {
   console.error("산출물 검증 실패:");

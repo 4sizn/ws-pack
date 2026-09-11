@@ -15,8 +15,14 @@ export default defineConfig({
   build: {
     lib: {
       entry: {
+        // 프로토콜마다 진입점을 따로 낸다. 쓰지 않는 프로토콜의 라이브러리를 받지 않게 하는 것이
+        // 이 분리의 목적이다 (브라우저 번들 기준 mqtt 만 360KB 가 넘는다).
         index: resolve(import.meta.dirname, "src/lib/index.ts"),
+        stomp: resolve(import.meta.dirname, "src/lib/stomp.ts"),
+        mqtt: resolve(import.meta.dirname, "src/lib/mqtt.ts"),
         worker: resolve(import.meta.dirname, "src/lib/worker/socket-worker.ts"),
+        "worker-stomp": resolve(import.meta.dirname, "src/lib/worker/stomp.ts"),
+        "worker-mqtt": resolve(import.meta.dirname, "src/lib/worker/mqtt.ts"),
       },
       formats: ["es"],
     },

@@ -111,6 +111,36 @@ classDiagram
 | 순수 WebSocket | `WindowWebSocketClient` | `WindowWebSocketController` | `WindowWebSocketClientAdapter` |
 | MQTT | `MqttWebSocketClient` | `MqttWebSocketController` | `MqttWebSocketClientAdapter` |
 
+## 진입점 분리
+
+프로토콜 구현은 import 경로로 갈린다. 코어가 세 프로토콜을 직접 참조하면, 순수 WebSocket 만
+쓰는 소비자도 stompjs 와 mqtt 를 받는다 — 브라우저 번들 기준 mqtt 만 360KB 가 넘는다.
+
+```mermaid
+flowchart TB
+  core["ws-pack<br/>코어 · WindowWebSocketClient"]
+  stomp["ws-pack/stomp<br/>@stomp/stompjs"]
+  mqtt["ws-pack/mqtt<br/>mqtt"]
+  worker["ws-pack/worker<br/>허브 · window"]
+  ws["ws-pack/worker/stomp"]
+  wm["ws-pack/worker/mqtt"]
+  reg[("프로토콜 등록소")]
+
+  core --> reg
+  stomp --> reg
+  mqtt --> reg
+  worker --> reg
+  ws --> stomp
+  wm --> mqtt
+```
+
+코어는 어떤 프로토콜이 있는지 모른다. 진입점을 import 하면 그 모듈이 자기 구현을 등록소에 넣고,
+그때부터 워커 허브와 `createWorkerClient` 가 쓸 수 있다. 등록되지 않은 프로토콜을 요청하면
+무엇을 import 해야 하는지 알려주며 실패한다 — 조용히 다른 프로토콜로 바꾸지 않는다.
+
+`@stomp/stompjs` 와 `mqtt` 는 선택적 peer 의존이다. 코어 진입점이 그 둘을 import 하지 않는다는
+사실은 `bun run check:dist` 가 번들을 읽어 확인한다 — 타입 검사와 테스트는 이게 깨져도 통과한다.
+
 ## 제네릭이 하는 일
 
 `WebSocketController<TMessage, TSend, TAdapter>` 의 세 번째 인자는 **구체 Adapter 타입**이다.

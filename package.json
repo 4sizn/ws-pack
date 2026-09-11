@@ -22,8 +22,6 @@
     "ws:server": "bun server/echo-server.ts"
   },
   "dependencies": {
-    "@stomp/stompjs": "7.3.0",
-    "mqtt": "^5.15.2",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "rxjs": "^7.8.2"
@@ -31,18 +29,25 @@
   "devDependencies": {
     "@biomejs/biome": "^2.5.12",
     "@playwright/test": "^1.63.0",
+    "@stomp/stompjs": "7.3.0",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@types/ws": "^8.18.1",
     "@vitejs/plugin-react": "^5.0.0",
     "aedes": "^1.1.2",
+    "mqtt": "^5.15.2",
     "typescript": "^5.9.0",
     "vite": "^7.1.0",
     "ws": "^8.21.3"
   },
   "description": "WebSocket 클라이언트 패키지 — STOMP / 순수 WebSocket / MQTT 를 같은 표면으로, Worker·SharedWorker 위에서도.",
   "sideEffects": [
-    "./dist/lib/worker.js"
+    "./dist/lib/worker.js",
+    "./dist/lib/worker-stomp.js",
+    "./dist/lib/worker-mqtt.js",
+    "./dist/lib/stomp.js",
+    "./dist/lib/mqtt.js",
+    "./dist/lib/index.js"
   ],
   "files": [
     "dist/lib",
@@ -54,12 +59,41 @@
       "types": "./dist/types/index.d.ts",
       "import": "./dist/lib/index.js"
     },
+    "./stomp": {
+      "types": "./dist/types/stomp.d.ts",
+      "import": "./dist/lib/stomp.js"
+    },
+    "./mqtt": {
+      "types": "./dist/types/mqtt.d.ts",
+      "import": "./dist/lib/mqtt.js"
+    },
     "./worker": {
       "types": "./dist/types/worker/socket-worker.d.ts",
       "import": "./dist/lib/worker.js"
     },
+    "./worker/stomp": {
+      "types": "./dist/types/worker/stomp.d.ts",
+      "import": "./dist/lib/worker-stomp.js"
+    },
+    "./worker/mqtt": {
+      "types": "./dist/types/worker/mqtt.d.ts",
+      "import": "./dist/lib/worker-mqtt.js"
+    },
     "./package.json": "./package.json"
   },
   "types": "./dist/types/index.d.ts",
-  "module": "./dist/lib/index.js"
+  "module": "./dist/lib/index.js",
+  "peerDependencies": {
+    "@stomp/stompjs": "7.3.0",
+    "mqtt": "^5.15.2",
+    "rxjs": "^7.8.2"
+  },
+  "peerDependenciesMeta": {
+    "@stomp/stompjs": {
+      "optional": true
+    },
+    "mqtt": {
+      "optional": true
+    }
+  }
 }
