@@ -5,7 +5,13 @@ export {
   type WorkerClientSelection,
   type WorkerMode,
 } from "./createWorkerClient";
-export { defaultClientFactory, type HubClient, type HubClientFactory, WorkerHub } from "./hub";
+export {
+  defaultClientFactory,
+  type HubClient,
+  type HubClientFactory,
+  WorkerHub,
+  type WorkerHubOptions,
+} from "./hub";
 export type {
   MessageLike,
   WireMessage,

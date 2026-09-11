@@ -113,6 +113,7 @@ sequenceDiagram
   H-->>P: ack { command } (실패면 error 포함)
   P->>H: revalidate { handle, command }
   H-->>P: ack { command, alive }
+  P->>H: ping { handle }
   P->>H: release { handle }
 ```
 
@@ -122,6 +123,61 @@ sequenceDiagram
 
 구독은 손잡이별로 관리된다. 한 탭이 구독을 풀어도 다른 탭의 구독은 살아 있고, 포트가 닫히면 그 포트가
 연 손잡이와 구독이 함께 정리된다.
+
+## 사라진 탭 정리
+
+SharedWorker 에는 **포트가 닫혔다는 이벤트가 없다.** 탭이 정상적으로 닫히면 페이지가 `pagehide` 에서
+`release` 를 보내지만, 크래시하거나 모바일에서 회수되면 그 신호도 오지 않는다. 그대로 두면 허브는
+아무도 쓰지 않는 손잡이를 계속 들고 있고, 소켓도 열린 채로 남는다.
+
+그래서 손잡이마다 마지막 소식 시각을 들고, 소식이 끊긴 것을 걷어낸다.
+
+| 값 | 기본 | 정하는 곳 |
+| --- | --- | --- |
+| 살아 있음 신호 주기 | 15초 | `new WorkerWebSocketClient(worker, config, { pingIntervalMs })` (`0` 이면 끔) |
+| 걷어내기 기준 | 60초 | 워커 주소의 `?staleAfterMs=` |
+| 걷어내기 주기 | 15초 | 워커 주소의 `?sweepIntervalMs=` |
+
+```ts
+const url = new URL("ws-pack/worker", import.meta.url);
+url.searchParams.set("staleAfterMs", "120000"); // 더 너그럽게
+new SharedWorker(url, { type: "module" });
+```
+
+명령을 하나라도 보내면 그것이 곧 살아 있다는 증거다. `ping` 은 오래 조용한 연결을 위한 것이다.
+
+```mermaid
+sequenceDiagram
+  participant P as 페이지
+  participant H as 허브
+  participant C as 연결
+
+  P->>H: ping { handle }
+  Note over H: lastSeen 갱신
+  Note over P: 탭이 얼거나 사라진다 — ping 이 끊긴다
+  Note over H: staleAfterMs 경과
+  H-->>P: stale { handle }
+  H->>C: disconnect() (원하는 손잡이가 없으면)
+  Note over P: 살아 있었다면 깨어나 읽는다
+  P->>H: open { 같은 handle } + subscribe + connect
+```
+
+**걷어내도 되돌릴 수 있다.** 모바일은 백그라운드 탭의 타이머를 얼리므로, 살아 있는 탭이 잘못
+걷어내질 수 있다. 그래서 허브는 걷어내기 전에 `stale` 을 보내고, 페이지는 깨어나면 그것을 읽고
+같은 손잡이 아이디로 다시 연다 — 구독과 연결 의사까지 페이지가 복원하므로 소비자 코드는 손댈 게 없다.
+놓친 메시지는 돌아오지 않으므로, `staleAfterMs` 는 넉넉한 쪽이 안전하다.
+
+실기기에서 실제로 관찰된 것(iPhone 15 Pro, iOS 26.6.1, 2026-09-11): 사파리를 100초 동안
+백그라운드로 보내면 탭이 멈추고 — 그동안 보고가 한 건도 오지 않는다 — 돌아왔을 때 페이지는
+**이어서 도는 게 아니라 처음부터 다시 로드된다.** 즉 실기기의 흔한 경로는 `stale` 복구가 아니라
+새 손잡이로의 재시작이고, 버려진 손잡이를 걷어내는 쪽이 소켓 누수를 막는다. 실측하면 그 방의
+소켓은 0개로 돌아왔다. (같은 조작을 시뮬레이터에서 하면 탭이 얼지 않아 이 경로가 재현되지 않는다.)
+
+확인하는 법은 `/leak-check.html` 이다. 실제 SharedWorker 와 실제 소켓으로 걷어내기와 복구를
+돌려 보고, **열린 소켓 수는 에코 서버에게 직접 묻는다**(`GET :8010/count?room=`).
+
+- `?ping=0&staleAfterMs=1500&sweepIntervalMs=300` — 크래시한 탭 흉내. 걷어내고 스스로 복구하는지 본다
+- `?hold=1` — 왕복을 계속한다. 폰을 백그라운드로 보냈다 돌아와서 복구를 확인할 때 쓴다
 
 ## 모드 선택
 

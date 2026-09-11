@@ -263,4 +263,126 @@ describe("워커 허브", () => {
     expect(error.name).toBe("UnsupportedOperation");
     port.close();
   });
+
+  /**
+   * SharedWorker 에는 포트가 닫혔다는 이벤트가 없다. 탭이 크래시하거나 모바일에서 회수되면
+   * `release` 는 영영 오지 않는다 — 손잡이가 남아 소켓이 아무도 없는 채로 열려 있게 된다.
+   * 그래서 허브는 소식이 끊긴 손잡이를 스스로 걷어낸다.
+   */
+  it("소식이 끊긴 손잡이를 걷어내고 소켓을 닫는다", async () => {
+    let client!: FakeHubClient;
+    let now = 0;
+    const hub = new WorkerHub(
+      () => {
+        client = new FakeHubClient();
+        return client;
+      },
+      { staleAfterMs: 1000, now: () => now },
+    );
+    const port = connectPort(hub);
+
+    port.send({ type: "open", handle: "a", key: "shared", config });
+    port.send({ type: "connect", handle: "a", command: "c1" });
+    await delay(10);
+    expect(hub.connectionCount).toBe(1);
+
+    // 탭이 사라진다: release 도 없고 ping 도 끊긴다.
+    now = 1001;
+    hub.sweep();
+    await delay(10);
+
+    expect(hub.connectionCount).toBe(0);
+    expect(client.disconnects).toBe(1);
+    port.close();
+  });
+
+  it("ping 이 오는 손잡이는 걷어내지 않는다", async () => {
+    let now = 0;
+    const hub = new WorkerHub(() => new FakeHubClient(), { staleAfterMs: 1000, now: () => now });
+    const port = connectPort(hub);
+
+    port.send({ type: "open", handle: "a", key: "shared", config });
+    await delay(10);
+
+    now = 900;
+    port.send({ type: "ping", handle: "a" });
+    await delay(10);
+
+    now = 1500; // open 으로부터는 넘겼지만 마지막 ping 으로부터는 넘기지 않았다
+    hub.sweep();
+    await delay(10);
+
+    expect(hub.connectionCount).toBe(1);
+    port.close();
+  });
+
+  it("한 탭이 사라져도 살아 있는 탭의 소켓은 그대로다", async () => {
+    let client!: FakeHubClient;
+    let now = 0;
+    const hub = new WorkerHub(
+      () => {
+        client = new FakeHubClient();
+        return client;
+      },
+      { staleAfterMs: 1000, now: () => now },
+    );
+    const alive = connectPort(hub);
+    const dying = connectPort(hub);
+
+    alive.send({ type: "open", handle: "a", key: "shared", config });
+    dying.send({ type: "open", handle: "b", key: "shared", config });
+    alive.send({ type: "connect", handle: "a", command: "c1" });
+    dying.send({ type: "connect", handle: "b", command: "c2" });
+    await delay(10);
+
+    now = 1001;
+    alive.send({ type: "ping", handle: "a" });
+    await delay(10);
+    hub.sweep();
+    await delay(10);
+
+    expect(hub.connectionCount).toBe(1);
+    expect(client.disconnects).toBe(0);
+    alive.close();
+    dying.close();
+  });
+
+  it("걷어낸 손잡이에게는 stale 을 알려 다시 열 수 있게 한다", async () => {
+    let now = 0;
+    const hub = new WorkerHub(() => new FakeHubClient(), { staleAfterMs: 1000, now: () => now });
+    const port = connectPort(hub);
+
+    port.send({ type: "open", handle: "a", key: "shared", config });
+    await delay(10);
+
+    now = 1001;
+    hub.sweep();
+    await delay(10);
+
+    const stale = port.received.find((event) => (event as { type: string }).type === "stale");
+    expect(stale).toEqual({ type: "stale", handle: "a" });
+    port.close();
+  });
+
+  it("걷어낸 손잡이를 같은 아이디로 다시 열 수 있다", async () => {
+    let now = 0;
+    const hub = new WorkerHub(() => new FakeHubClient(), { staleAfterMs: 1000, now: () => now });
+    const port = connectPort(hub);
+
+    port.send({ type: "open", handle: "a", key: "shared", config });
+    await delay(10);
+    now = 1001;
+    hub.sweep();
+    await delay(10);
+    expect(hub.connectionCount).toBe(0);
+
+    port.send({ type: "open", handle: "a", key: "shared", config });
+    port.send({ type: "connect", handle: "a", command: "c2" });
+    await delay(10);
+
+    expect(hub.connectionCount).toBe(1);
+    const ack = port.received.find((event) => (event as { command?: string }).command === "c2");
+    expect(ack).toBeDefined();
+    port.close();
+  });
 });
