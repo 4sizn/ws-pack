@@ -22,6 +22,30 @@ bun run dev             # 데모 http://localhost:5173
 
 커밋 훅은 클론마다 한 번 걸어야 한다: `git config core.hooksPath .githooks`.
 
+## 작업 흐름
+
+**main 에서 직접 작업하지 않는다.** main 은 GitHub ruleset 으로 잠겨 있다 — 직접 푸시, force
+push, 브랜치 삭제가 모두 거부되고 squash 머지만 허용된다. 로컬 `.githooks/pre-push` 가 같은 것을
+푸시 전에 먼저 막는다.
+
+```bash
+git switch -c <type>/<topic>      # 브랜치 이름은 커밋 타입을 따른다 (docs/, fix/, feat/, ci/)
+git push -u origin <type>/<topic>
+gh pr create
+```
+
+지금 작업을 그대로 두고 다른 일을 하려면 워크트리를 쓴다. 각 워크트리가 자기 브랜치를 체크아웃하므로
+stash 없이 병행할 수 있다.
+
+```bash
+git worktree add ../ws-pack-<topic> -b <type>/<topic>
+cd ../ws-pack-<topic> && bun install   # node_modules 는 워크트리마다 따로 둔다
+git worktree remove ../ws-pack-<topic> # 끝나면 정리
+```
+
+머지 전에 CI 를 확인한다(`gh pr checks <번호>`). squash 머지 뒤에는 `git fetch --prune` 으로 남은
+원격 ref 를 정리한다.
+
 ## 구조
 
 `src/lib` 이 패키지 본체, `src/demo` 는 배포에 들어가지 않는 데모다.
