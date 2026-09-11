@@ -7,17 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-
-- The package is now published as `ws-client-pack`. Import paths change accordingly: `ws-client-pack`, `ws-client-pack/stomp`, `ws-client-pack/mqtt`, `ws-client-pack/worker`. Nothing was ever published under the old name, so no consumer has to migrate.
+## [0.2.0] - 2026-09-11
 
 ### Added
 
-- Dependabot now watches the package and the GitHub Actions workflows weekly, grouping development updates into one pull request. CI also cancels superseded runs on a pull request branch while leaving `main` runs alone, since those are what release decisions read.
-
-- The worker hub now sweeps handles that stopped reporting in, so a crashed or discarded tab no longer keeps a SharedWorker socket open forever. Pages send a liveness ping (`pingIntervalMs`, default 15s), release the handle on `pagehide`, and reopen themselves — restoring subscriptions and the connect intent — when the hub reports a handle `stale`. Tune the window with `?staleAfterMs=` and `?sweepIntervalMs=` on the worker script URL.
-- Added `/leak-check.html`, which exercises the sweep and the recovery against a real SharedWorker and real sockets, and a `GET /count?room=` endpoint on the demo echo server so tests count open sockets instead of inferring them.
-
+- Worker handles now carry a liveness signal: pages send `ping` (`pingIntervalMs`, default 15s) and the hub reports `stale` before dropping a handle, so a page that was only frozen reopens the same handle id and restores its subscriptions and connect intent. Tune the window with `?staleAfterMs=` and `?sweepIntervalMs=` on the worker script URL. (#29)
+- Added `/leak-check.html`, which exercises the sweep and the recovery against a real SharedWorker and real sockets, and a `GET /count?room=` endpoint on the demo echo server so tests count open sockets instead of inferring them. (#29)
+- Dependabot now watches the package and the GitHub Actions workflows weekly, grouping development updates into one pull request. (#32)
 - End-to-end browser tests now run on Chromium, Firefox, and WebKit, and the device-check page shows both the requested and resolved worker mode so the fallback chain is visible per engine. (#21)
 - Reconnect delays now use equal jitter (`[base/2, base]`) by default. Opt out with `reconnect.jitter: false`. (#17)
 - End-to-end browser tests now cover STOMP alongside plain WebSocket and MQTT, bringing the browser matrix to nine protocol/mode pairs. (#16)
@@ -28,12 +24,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- The browser tests now retry twice on CI (and never locally). They drive real browsers and real sockets, so a slow runner could fail a green change; a test that passes on retry is reported as flaky and its failing trace is still uploaded.
-
-- `engines.node` is now `>=22`. Node 18 and 20 both reached end of life (April 2025 and April 2026), so the supported floor is the oldest release still receiving security fixes. Nothing in the shipped code needs Node 22 — the bump narrows what this package claims to support to what is actually maintained and tested.
-
-- `react` and `react-dom` moved to `devDependencies` and `rxjs` is now declared only as a peer dependency. The published package previously listed all three as runtime dependencies, so every consumer installed React and risked a duplicate RxJS copy.
-
+- The package is now published as `ws-client-pack`. Import paths change accordingly: `ws-client-pack`, `ws-client-pack/stomp`, `ws-client-pack/mqtt`, `ws-client-pack/worker`. Nothing was ever published under the old name, so no consumer has to migrate. (#38)
+- `react` and `react-dom` moved to `devDependencies` and `rxjs` is now declared only as a peer dependency. The published package previously listed all three as runtime dependencies, so every consumer installed React and risked a duplicate RxJS copy. (#29)
+- `engines.node` is now `>=22`. Node 18 and 20 both reached end of life (April 2025 and April 2026), so the supported floor is the oldest release still receiving security fixes. (#30)
+- The browser tests now retry twice on CI and never locally, and CI cancels superseded runs on a pull request branch while leaving `main` runs alone. (#31, #32)
 - Documented the states in which `send()` throws and the recommended `connect$` flush pattern for app-level message queues. (#20)
 - Demo now queues pending messages and flushes them on `connect$`, matching the documented pattern.
 - Split the package into protocol-specific entry points: `ws-client-pack`, `ws-client-pack/stomp`, `ws-client-pack/mqtt`, and matching `/worker/*` paths. Protocol libraries are now optional peer dependencies. (#15)
@@ -42,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A SharedWorker is never told that a port closed, so a tab that crashed or was reclaimed on mobile kept its handle — and its socket — open forever. The hub now sweeps handles that stopped reporting in, and pages release on `pagehide`. Verified on a real iPhone 15 Pro (iOS 26.6.1), where a backgrounded tab is discarded and reloaded rather than resumed. (#29)
 - `revalidate()` now recovers from a `CLOSED` state by resetting the retry budget and starting a fresh connect, so foreground/online signals work after retries are exhausted. (#19)
 - MQTT no longer leaves the old socket open when a dead connection is replaced, preventing duplicate subscriptions after revalidation. (#13)
 - The test STOMP broker now replies with `RECEIPT` frames as the spec requires, so `revalidate()` probes report the correct liveness. (#13)

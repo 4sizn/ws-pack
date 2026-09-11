@@ -1,6 +1,6 @@
 {
   "name": "ws-client-pack",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "WebSocket 클라이언트 패키지 — STOMP / 순수 WebSocket / MQTT 를 같은 표면으로, Worker·SharedWorker 위에서도.",
   "license": "MIT",
   "author": "heeseok shin",
