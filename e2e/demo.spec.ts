@@ -16,9 +16,48 @@ test("기기 점검 페이지가 모든 조합을 통과한다", async ({ page }
   const expected = protocols.split(",").length * 3; // 프로토콜 × 모드(main·dedicated·shared)
   await expect(rows).toHaveCount(expected, { timeout: 45_000 });
 
-  // 한 줄이라도 실패면 그 줄의 사유가 그대로 보인다.
+  const supports = await page.evaluate(() => ({
+    shared: typeof SharedWorker !== "undefined",
+    dedicated: typeof Worker !== "undefined",
+  }));
+
+  for (const protocol of protocols.split(",")) {
+    for (const requestedMode of ["main", "dedicated", "shared"] as const) {
+      const row = page.locator(
+        `tbody tr[data-protocol="${protocol}"][data-requested-mode="${requestedMode}"]`,
+      );
+
+      const resolved = await row.getAttribute("data-resolved-mode");
+      const status = await row.getAttribute("class");
+      const detail = (await row.locator("td").nth(5).textContent())?.trim() ?? "";
+
+      if (requestedMode === "main") {
+        await expect(status).toBe("통과");
+        await expect(resolved).toBe("main");
+        continue;
+      }
+
+      if (!supports.shared && requestedMode === "shared") {
+        await expect(status).toBe("건너뜀");
+        await expect(resolved).toBe(supports.dedicated ? "dedicated" : "main");
+        await expect(detail.length).toBeGreaterThan(0);
+        await expect(detail).toContain("SharedWorker");
+        continue;
+      }
+
+      if (!supports.dedicated && requestedMode === "dedicated") {
+        await expect(status).toBe("건너뜀");
+        await expect(resolved).toBe("main");
+        await expect(detail).toContain("Worker");
+        continue;
+      }
+
+      await expect(status).toBe("통과");
+    }
+  }
+
+  // 한 줄이라도 실패하면 그 줄의 사유가 그대로 보인다.
   await expect(page.locator("tbody tr.실패")).toHaveCount(0);
-  await expect(page.locator("tbody tr.통과")).toHaveCount(expected);
 });
 
 test("메인 스레드에서 친 글자가 말풍선으로 돌아온다", async ({ page }) => {

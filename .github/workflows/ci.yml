@@ -52,7 +52,7 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Install browser
-        run: bunx playwright install --with-deps chromium
+        run: bunx playwright install --with-deps chromium webkit firefox
 
       # STOMP 브로커는 도커로 띄운다. 서비스 컨테이너로는 web_stomp 플러그인을 켜는 명령을
       # 줄 수 없어서, 로컬과 같은 compose 파일을 그대로 쓴다.

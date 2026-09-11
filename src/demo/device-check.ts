@@ -29,7 +29,9 @@ const protocols = requested
 
 interface Outcome {
   protocol: Protocol;
-  mode: WorkerMode;
+  requestedMode: WorkerMode;
+  resolvedMode: WorkerMode;
+  skipped: Array<{ mode: WorkerMode; reason: string }>;
   status: "통과" | "실패" | "건너뜀";
   detail: string;
   ms: number;
@@ -72,12 +74,19 @@ function destinationFor(protocol: Protocol, room: string): string | undefined {
 }
 
 /** 한 조합을 끝까지 돌린다: 연결 → 구독 → 왕복 → 재검증 → 종료 → 폐기. */
-async function check(protocol: Protocol, mode: WorkerMode): Promise<Outcome> {
+async function check(protocol: Protocol, requestedMode: WorkerMode): Promise<Outcome> {
   const started = Date.now();
   const room = `device-${randomId().slice(0, 8)}`;
-  const finish = (status: Outcome["status"], detail: string): Outcome => ({
+  const finish = (
+    status: Outcome["status"],
+    detail: string,
+    resolvedMode: WorkerMode = requestedMode,
+    skipped: Outcome["skipped"] = [],
+  ): Outcome => ({
     protocol,
-    mode,
+    requestedMode,
+    resolvedMode,
+    skipped,
     status,
     detail,
     ms: Date.now() - started,
@@ -85,14 +94,19 @@ async function check(protocol: Protocol, mode: WorkerMode): Promise<Outcome> {
 
   const chosen = createWorkerClient({
     config: configFor(protocol, room),
-    prefer: [mode],
+    prefer: [requestedMode],
     workerUrl: new URL("./demo-worker.ts", import.meta.url),
-    workerOptions: { type: "module", name: `check-${protocol}-${mode}` },
+    workerOptions: { type: "module", name: `check-${protocol}-${requestedMode}` },
     key: `${protocol}:${room}`,
   });
 
-  if (chosen.mode !== mode) {
-    return finish("건너뜀", chosen.skipped.map((entry) => entry.reason).join(", "));
+  if (chosen.mode !== requestedMode) {
+    return finish(
+      "건너뜀",
+      chosen.skipped.map((entry) => entry.reason).join(", ") || "폴백 경로가 이유 없이 변경됐다",
+      chosen.mode,
+      chosen.skipped,
+    );
   }
 
   const client = chosen.client as NetworkClient<WireMessage | string, unknown> & {
@@ -146,7 +160,9 @@ function render(): void {
   const rows = results
     .map(
       (outcome) =>
-        `<tr class="${outcome.status}"><td>${outcome.protocol}</td><td>${outcome.mode}</td>` +
+        `<tr class="${outcome.status}" data-protocol="${outcome.protocol}"` +
+        ` data-requested-mode="${outcome.requestedMode}" data-resolved-mode="${outcome.resolvedMode}">` +
+        `<td>${outcome.protocol}</td><td>${outcome.requestedMode}</td><td>${outcome.resolvedMode}</td>` +
         `<td>${outcome.status}</td><td>${outcome.ms}ms</td><td>${outcome.detail}</td></tr>`,
     )
     .join("");
@@ -160,7 +176,7 @@ function render(): void {
        crypto.randomUUID: <b>${typeof crypto?.randomUUID === "function" ? "있음" : "없음"}</b> ·
        보안 컨텍스트: <b>${window.isSecureContext ? "예" : "아니오"}</b></p>
     <table>
-      <thead><tr><th>프로토콜</th><th>모드</th><th>결과</th><th>시간</th><th>내용</th></tr></thead>
+      <thead><tr><th>프로토콜</th><th>요청 모드</th><th>실제 모드</th><th>결과</th><th>시간</th><th>내용</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
   `;
