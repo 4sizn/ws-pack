@@ -127,20 +127,31 @@ sequenceDiagram
   participant A as Adapter
   participant S as 서버
 
-  App->>Ctrl: revalidate(3000)
-  Note over Ctrl: OPEN 이 아니면 묻지도 않고 false
-  Note over Ctrl,A: 제한 시간이 signal 로 붙는다
-  Ctrl->>A: revalidate(signal)
-  A->>S: 프로토콜별 왕복
-  alt 응답 도착
-    S-->>A: 응답
-    A-->>Ctrl: true
-    Ctrl-->>App: true
-  else 제한 시간 초과
-    Ctrl->>Ctrl: socketClosed$ emit
-    Note over Ctrl: 예기치 않은 종료와 같은 경로로 재연결
+App->>Ctrl: revalidate(3000)
+  alt OPEN
+    Ctrl->>A: revalidate(signal)
+    A->>S: 프로토콜별 왕복
+    alt 응답 도착
+      S-->>A: 응답
+      A-->>Ctrl: true
+      Ctrl-->>App: true
+    else 제한 시간 초과
+      Ctrl->>Ctrl: socketClosed$ emit
+      Note over Ctrl: 예기치 않은 종료와 같은 경로로 재연결
+      Ctrl-->>App: false
+    end
+  else CLOSED
+    Ctrl->>Ctrl: 재시도 예산 리셋
+    Ctrl->>Ctrl: connect()
+    Note over Ctrl: 결과와 상관없이 false
+    Ctrl-->>App: false
+  else CONNECTING / RECONNECTING / IDLE
+    Note over Ctrl: 아무 시도도 하지 않음
+    Ctrl-->>App: false
+  else 기타
     Ctrl-->>App: false
   end
+  Note over Ctrl,A: 제한 시간이 signal 로 붙는다
 ```
 
 | 프로토콜 | 왕복 수단 | 진짜 왕복인가 |
@@ -155,6 +166,43 @@ STOMP 는 `revalidateDestination` 이 없으면 왕복하지 않는다. 유효�
 
 > 첫 구현은 존재하지 않는 구독의 UNSUBSCRIBE 에 receipt 를 달았다. 브로커는 모르는 id 에 RECEIPT 를
 > 주지 않으므로 항상 실패했고, 기기 점검에서 STOMP 세 조합이 전부 "죽음"으로 보고되면서 드러났다.
+
+## send
+
+`send()` 는 큐잉하지 않고 OPEN 에서만 즉시 전송한다. 그 외에는 throw 한다.
+
+| 상태 | 에러 메시지 |
+| --- | --- |
+| IDLE | `[클래스명] cannot send: connection is IDLE` |
+| CONNECTING | `[클래스명] cannot send: connection is CONNECTING` |
+| RECONNECTING | `[클래스명] cannot send: connection is RECONNECTING` |
+| CLOSED | `[클래스명] cannot send: connection is CLOSED` |
+| destroyed | `[클래스명] cannot send: controller has been destroyed` |
+
+라이브러리는 전송의 유효 기간, 중복 제거 규칙, 사용자 의도를 모르므로 보관 정책을 만들 수 없다.
+그래서 메시지 보류는 앱이 책임지고, `connect$` 시점에 `send` 재시도 큐를 비운다.
+
+```ts
+const pending: string[] = [];
+
+client.connect$.subscribe(() => {
+  while (pending.length > 0) {
+    try {
+      client.send(pending.shift()!);
+    } catch {
+      break;
+    }
+  }
+});
+
+function safeSend(body: string) {
+  try {
+    client.send(body);
+  } catch (error) {
+    pending.push(body);
+  }
+}
+```
 
 ## 종료
 

@@ -242,6 +242,54 @@ describe("연결 재검증", () => {
     expect(await controller.revalidate()).toBe(false);
     expect(adapter.revalidations).toBe(0);
   });
+
+  it("연결이 CLOSED 면 재시도 예산을 리셋하고 새 connect 를 시작해 false 를 돌려준다", async () => {
+    const { adapter, controller } = setup(["fail", "fail", "fail"]);
+
+    await expect(controller.connect()).rejects.toThrow(
+      /Maximum reconnection attempts \(2\) reached/,
+    );
+
+    expect(adapter.attempts).toBe(3);
+    expect(controller.connectionState).toBe(ConnectionState.CLOSED);
+    expect(controller.reconnectInfo.attempts).toBe(2);
+
+    expect(await controller.revalidate()).toBe(false);
+
+    expect(controller.reconnectInfo.attempts).toBe(0);
+    await waitFor(() => adapter.attempts === 4, "재연결 시도", 500);
+    await waitFor(() => controller.connectionState === ConnectionState.OPEN, "재연결 완료", 500);
+    expect(controller.connectionState).toBe(ConnectionState.OPEN);
+  });
+
+  it("CONNECTING / RECONNECTING / IDLE 는 revalidate 하지 않는다", async () => {
+    const { adapter, controller } = setup(["fail"]);
+
+    const connecting = controller.connect();
+    await waitFor(
+      () => controller.connectionState === ConnectionState.CONNECTING,
+      "연결 시도 시작",
+      200,
+    );
+    expect(await controller.revalidate()).toBe(false);
+    expect(adapter.revalidations).toBe(0);
+
+    await waitFor(
+      () => controller.connectionState === ConnectionState.RECONNECTING,
+      "재연결 진입",
+      200,
+    );
+    expect(await controller.revalidate()).toBe(false);
+    expect(adapter.revalidations).toBe(0);
+
+    await connecting;
+
+    await waitFor(() => controller.connectionState === ConnectionState.OPEN, "재연결 완료", 500);
+    await controller.disconnect();
+    expect(controller.connectionState).toBe(ConnectionState.IDLE);
+    expect(await controller.revalidate()).toBe(false);
+    expect(adapter.revalidations).toBe(0);
+  });
 });
 
 describe("인스턴스 폐기", () => {

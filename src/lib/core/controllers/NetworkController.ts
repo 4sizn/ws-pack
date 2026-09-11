@@ -235,9 +235,17 @@ export abstract class WebSocketController<
    */
   public async revalidate(timeoutMs = 3000): Promise<boolean> {
     if (this.#destroyed) return false;
-    if (this.connectionState !== ConnectionState.OPEN || !this.adapter) {
+
+    if (this.connectionState !== ConnectionState.OPEN) {
+      if (this.connectionState === ConnectionState.CLOSED) {
+        this.#reconnectAttempts = 0;
+        // 오류는 error$ / maxReconnectReached$ 로 이미 나가므로 여기선 조용히 넘긴다.
+        void this.connect().catch(() => {});
+      }
       return false;
     }
+
+    if (!this.adapter) return false;
 
     const limit = new AbortController();
     const timer = setTimeout(() => limit.abort(), timeoutMs);

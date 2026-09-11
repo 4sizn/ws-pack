@@ -25,6 +25,7 @@ class FakeTransport implements RoomTransport {
 
   readonly incoming$ = new Subject<string>();
   readonly connectionChanges$ = new Subject<ConnectionState>();
+  readonly connect$ = new Subject<void>();
   readonly reconnectAttempt$ = new Subject<ReconnectInfo>();
   readonly error$ = new Subject<Error>();
   readonly disconnect$ = new Subject<DisconnectInfo>();
@@ -144,6 +145,26 @@ describe("방 세션", () => {
     session.send("보내지지 않을 말");
 
     expect(session.getSnapshot().lastError).toContain("cannot send");
+  });
+
+  it("연결이 살아날 때까지 보내는 말은 대기열에 보관한다", async () => {
+    const { transport, session } = setup();
+    transport.sendFails = "cannot send: connection is RECONNECTING";
+
+    session.send("연결 안 된 말");
+    await delay(0);
+    expect(transport.sent).toEqual([]);
+    expect(session.getSnapshot().lastError).toContain("cannot send");
+
+    transport.sendFails = undefined;
+    transport.connect$.next();
+    await delay(0);
+    expect(transport.sent).toHaveLength(1);
+
+    const payload = JSON.parse(transport.sent[0] ?? "{}");
+    expect(payload.clientId).toBe(session.clientId);
+    expect(payload.text).toBe("연결 안 된 말");
+    expect(session.getSnapshot().lastError).toBeNull();
   });
 
   it("스냅샷은 매번 새 객체다 — 렌더가 변화를 알아채려면", async () => {
