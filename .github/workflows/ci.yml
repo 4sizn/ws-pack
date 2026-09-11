@@ -6,6 +6,12 @@ on:
     branches: [main]
   pull_request:
 
+# 같은 브랜치에 연달아 밀면 앞의 실행은 의미가 없다. PR 에서는 취소한다.
+# main 에서는 취소하지 않는다 — 거기 실행 결과는 릴리스 판단의 근거다.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   check:
     runs-on: ubuntu-latest

@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Dependabot now watches the package and the GitHub Actions workflows weekly, grouping development updates into one pull request. CI also cancels superseded runs on a pull request branch while leaving `main` runs alone, since those are what release decisions read.
+
 - The worker hub now sweeps handles that stopped reporting in, so a crashed or discarded tab no longer keeps a SharedWorker socket open forever. Pages send a liveness ping (`pingIntervalMs`, default 15s), release the handle on `pagehide`, and reopen themselves — restoring subscriptions and the connect intent — when the hub reports a handle `stale`. Tune the window with `?staleAfterMs=` and `?sweepIntervalMs=` on the worker script URL.
 - Added `/leak-check.html`, which exercises the sweep and the recovery against a real SharedWorker and real sockets, and a `GET /count?room=` endpoint on the demo echo server so tests count open sockets instead of inferring them.
 

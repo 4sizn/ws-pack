@@ -1,0 +1,31 @@
+version: 2
+
+# 의존성 갱신을 사람 기억에 맡기지 않는다. 보안 수정은 늦게 아는 것이 곧 노출이다.
+updates:
+  # 이 저장소는 bun.lock 을 쓴다. npm 생태계 설정이 bun 락파일을 함께 다룬다.
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    groups:
+      # 개발 의존성은 한 덩어리로 묶는다 — 매주 PR 이 열 개씩 열리면 아무도 읽지 않는다.
+      dev-dependencies:
+        dependency-type: "development"
+        update-types:
+          - "minor"
+          - "patch"
+    ignore:
+      # peerDependencies 가 7.3.0 을 정확히 요구한다. 여기만 올리면 둘이 어긋난다.
+      - dependency-name: "@stomp/stompjs"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    groups:
+      actions:
+        patterns: ["*"]
