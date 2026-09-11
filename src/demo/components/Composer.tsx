@@ -3,13 +3,12 @@ import { useState } from "react";
 import { shouldSendOnEnter } from "./sendOnEnter";
 
 interface ComposerProps {
-  disabled?: boolean;
   onSend: (text: string) => void;
 }
 
-export function Composer({ disabled = false, onSend }: ComposerProps) {
+export function Composer({ onSend }: ComposerProps) {
   const [draft, setDraft] = useState("");
-  const canSend = draft.trim().length > 0 && !disabled;
+  const canSend = draft.trim().length > 0;
 
   const send = () => {
     if (!canSend) return;
@@ -34,9 +33,8 @@ export function Composer({ disabled = false, onSend }: ComposerProps) {
       <textarea
         className="composer__input"
         rows={1}
-        placeholder={disabled ? "연결이 끊겨 전송할 수 없습니다" : "메시지를 입력하세요"}
+        placeholder="메시지를 입력하세요"
         value={draft}
-        disabled={disabled}
         onChange={(event) => setDraft(event.target.value)}
         onKeyDown={handleKeyDown}
       />

@@ -29,9 +29,11 @@ export type TransportMode = WorkerMode;
 export interface RoomTransport {
   connect(): Promise<void>;
   disconnect(): Promise<void>;
+  /** 첫 연결/재연결 성공 신호. 대기열 플러시 같은 동작을 여기서 연결한다. */
+  readonly connect$: Observable<void>;
   /** 이 방의 메시지 본문 스트림 */
   messages(): Observable<string>;
-  say(text: string): void;
+  say(text: string): void | Promise<void>;
   readonly connectionChanges$: Observable<ConnectionState>;
   readonly reconnectAttempt$: Observable<ReconnectInfo>;
   readonly error$: Observable<Error>;
@@ -135,6 +137,7 @@ function stompTransport(room: string): RoomTransport {
   return {
     connect: () => client.connect(),
     disconnect: () => client.disconnect(),
+    connect$: client.connect$,
     messages: () => client.subscribe(destination).pipe(map((message) => message.body)),
     say: (text) => client.send(text, { destination }),
     connectionChanges$: client.connectionChanges$,
@@ -154,6 +157,7 @@ function windowTransport(room: string): RoomTransport {
   return {
     connect: () => client.connect(),
     disconnect: () => client.disconnect(),
+    connect$: client.connect$,
     // 연결 자체가 방이라 구독 단계가 없다. 이 연결로 들어오는 모든 메시지가 이 방의 메시지다.
     messages: () => client.message$,
     say: (text) => client.send(text),
@@ -174,6 +178,7 @@ function mqttTransport(room: string): RoomTransport {
   return {
     connect: () => client.connect(),
     disconnect: () => client.disconnect(),
+    connect$: client.connect$,
     messages: () => client.subscribe(topic).pipe(map((message) => message.body)),
     say: (text) => client.send(text, { topic }),
     connectionChanges$: client.connectionChanges$,
@@ -246,14 +251,21 @@ function workerTransport(
   return {
     connect: () => client.connect(),
     disconnect: () => client.disconnect(),
+    connect$: client.connect$,
     messages: () =>
       protocol === "window"
         ? client.message$.pipe(map((message) => message.body))
         : client.subscribe(destinationOf(protocol, room)).pipe(map((message) => message.body)),
     say: (text) => {
-      void client
-        .send(text, protocol === "window" ? undefined : sendOptionsOf(protocol, room))
-        .catch((error: Error) => sendErrors.next(error));
+      const promise = client.send(
+        text,
+        protocol === "window" ? undefined : sendOptionsOf(protocol, room),
+      );
+      promise.catch((error: Error) => {
+        sendErrors.next(error);
+        throw error;
+      });
+      return promise;
     },
     connectionChanges$: client.connectionChanges$,
     reconnectAttempt$: client.reconnectAttempt$,

@@ -124,6 +124,29 @@ document.addEventListener("visibilitychange", () => {
 [프로토콜마다 다르다](docs/lifecycle.md#revalidate). 언제 부를지는 라이브러리가 정하지 않는다 —
 신호원은 실행 환경마다 다르고(워커에는 `document` 가 없다) 정책은 앱마다 다르다.
 
+`send()` 는 OPEN 이 아니면 즉시 throw 한다. 라이브러리는 메시지의 보관 정책을 정할 수 없으므로, 앱이
+`connect$` 로 복구 시점을 받아 보류 큐를 비워야 한다.
+
+```ts
+const pending: string[] = [];
+
+client.connect$.subscribe(() => {
+  while (pending.length > 0) {
+    try {
+      client.send(pending.shift()!);
+    } catch {
+      break;
+    }
+  }
+});
+
+try {
+  client.send(payload);
+} catch (error) {
+  pending.push(payload);
+}
+```
+
 ## 워커에서 돌리기
 
 소켓을 페이지 밖에서 소유하면 두 가지가 달라진다. 전용 Worker 는 소켓 작업을 메인 스레드에서 빼고,

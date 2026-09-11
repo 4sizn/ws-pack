@@ -166,6 +166,20 @@ for (const driver of drivers) {
       expect(me.state).toBe(ConnectionState.OPEN);
     });
 
+    it("재연결 예산 소진 후에는 revalidate이 새로 connect를 트리거한다", async () => {
+      const me = await join("room-a");
+
+      await backend.stop();
+      await waitFor(() => me.state === ConnectionState.CLOSED, "재시도 소진", 5000);
+
+      expect(await me.revalidate(1000)).toBe(false);
+      await waitFor(
+        () => me.state === ConnectionState.CONNECTING || me.state === ConnectionState.RECONNECTING,
+        "재연결 시작",
+        1000,
+      );
+    });
+
     it("서버가 응답을 멈추면 재검증이 실패하고 다시 연결한다", async () => {
       const me = await join("room-a");
       const received = inbox(me.listen());

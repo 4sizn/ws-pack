@@ -1,4 +1,3 @@
-import { ConnectionState } from "../../lib";
 import { useRoomSession } from "../hooks/useRoomSession";
 import { type Protocol, roomAddress, type TransportMode } from "../transport/roomTransport";
 import type { ChatRoom as ChatRoomModel, ChatUser } from "../types";
@@ -39,7 +38,7 @@ export function ChatRoom({ chatRoom, me, room, protocol, mode, onRoomChange }: C
       />
       <MessageList messages={snapshot.messages} />
       {snapshot.lastError && <div className="chat-room__error">{snapshot.lastError}</div>}
-      <Composer disabled={snapshot.connection !== ConnectionState.OPEN} onSend={controls.send} />
+      <Composer onSend={controls.send} />
     </section>
   );
 }

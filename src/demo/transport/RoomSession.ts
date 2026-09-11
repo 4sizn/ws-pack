@@ -67,6 +67,8 @@ export class RoomSession {
   readonly #listeners = new Set<(snapshot: RoomSnapshot) => void>();
 
   #snapshot: RoomSnapshot;
+  readonly #pendingPayloads: string[] = [];
+  #flushPending = false;
   #disposed = false;
 
   constructor(config: RoomSessionConfig) {
@@ -82,6 +84,9 @@ export class RoomSession {
         this.#patch(
           connection === ConnectionState.OPEN ? { connection, lastError: null } : { connection },
         );
+      }),
+      this.#transport.connect$.subscribe(() => {
+        void this.#flushPendingPayloads();
       }),
       this.#transport.reconnectAttempt$.subscribe((reconnect) => this.#patch({ reconnect })),
       this.#transport.error$.subscribe((error) => this.#patch({ lastError: error.message })),
@@ -129,12 +134,9 @@ export class RoomSession {
 
   public send(text: string): void {
     if (this.#disposed) return;
-    try {
-      this.#transport.say(JSON.stringify(buildPayload(this.clientId, this.#me, text)));
-      this.#patch({ lastError: null });
-    } catch (error) {
-      this.#patch({ lastError: (error as Error).message });
-    }
+    const payload = JSON.stringify(buildPayload(this.clientId, this.#me, text));
+    this.#pendingPayloads.push(payload);
+    void this.#flushPendingPayloads();
   }
 
   /** 세션 폐기. 구독을 끊고 소켓을 닫는다. 폐기한 세션은 재사용하지 않는다. */
@@ -164,6 +166,34 @@ export class RoomSession {
     this.#snapshot = { ...this.#snapshot, ...partial };
     for (const listener of this.#listeners) {
       listener(this.#snapshot);
+    }
+  }
+
+  async #flushPendingPayloads(): Promise<void> {
+    if (this.#flushPending || this.#disposed) return;
+    this.#flushPending = true;
+
+    try {
+      while (this.#pendingPayloads.length > 0 && !this.#disposed) {
+        const payload = this.#pendingPayloads[0];
+        if (payload === undefined) {
+          break;
+        }
+
+        try {
+          const maybePromise = this.#transport.say(payload);
+          if (typeof (maybePromise as Promise<void>)?.then === "function") {
+            await maybePromise;
+          }
+          this.#pendingPayloads.shift();
+          this.#patch({ lastError: null });
+        } catch (error) {
+          this.#patch({ lastError: (error as Error).message });
+          break;
+        }
+      }
+    } finally {
+      this.#flushPending = false;
     }
   }
 }
