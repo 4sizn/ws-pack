@@ -22,6 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `engines.node` is now `>=22`. Node 18 and 20 both reached end of life (April 2025 and April 2026), so the supported floor is the oldest release still receiving security fixes. Nothing in the shipped code needs Node 22 — the bump narrows what this package claims to support to what is actually maintained and tested.
+
 - `react` and `react-dom` moved to `devDependencies` and `rxjs` is now declared only as a peer dependency. The published package previously listed all three as runtime dependencies, so every consumer installed React and risked a duplicate RxJS copy.
 
 - Documented the states in which `send()` throws and the recommended `connect$` flush pattern for app-level message queues. (#20)
