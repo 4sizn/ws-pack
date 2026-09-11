@@ -83,7 +83,7 @@ sequenceDiagram
   Ctrl->>A: connect(signal)
   A-->>Ctrl: reject
   Ctrl->>Ctrl: 상태 = RECONNECTING<br/>reconnectAttempt$ emit
-  Note over Ctrl: delay 계산<br/>INTERVAL: 고정<br/>EXPONENTIAL: delay×2^(n-1), maxDelay 상한
+  Note over Ctrl: delay 계산<br/>INTERVAL: 고정<br/>EXPONENTIAL: delay×2^(n-1), maxDelay 상한<br/>jitter(기본 켜짐): [delay/2, delay] 로 흔듦
   Ctrl->>A: connect(signal) (재시도)
   A-->>Ctrl: reject
   Ctrl->>Ctrl: 재시도 소진
@@ -91,6 +91,11 @@ sequenceDiagram
 ```
 
 `maxAttempts` 는 **첫 시도를 제외한** 횟수다. 총 시도는 `1 + maxAttempts`.
+
+지연에는 equal jitter 가 기본으로 붙는다 — 계산된 값의 `[절반, 전부]` 사이를 뽑는다. 서버가 죽으면
+클라이언트들이 같은 순간에 재시도해서(실측 5ms 이내) 되살아나는 서버를 다시 눕히기 때문이다.
+`maxAttempts` 에서 포기하는 구조라 재시도 예산이 시간 창이고, full jitter 는 그 창을 평균 절반으로
+줄여 버린다. 그래서 창의 75% 를 지키는 equal jitter 를 쓴다. `reconnect.jitter: false` 로 끈다.
 
 각 시도의 원인 에러는 어댑터 콜백으로 이미 `error$` 에 나갔으므로, 소진 시점에는 "재시도 소진"이라는
 별개 사건 하나만 더 알린다. 같은 에러를 두 번 흘리지 않는다.
