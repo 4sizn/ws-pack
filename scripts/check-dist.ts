@@ -43,9 +43,9 @@ for (const name of expected) {
 
 // 프로토콜 진입점이 각자의 클라이언트를 내놓는가
 const stompApi = await import(resolve(root, "./dist/lib/stomp.js"));
-check("StompWebSocketClient" in stompApi, "ws-pack/stomp 에 StompWebSocketClient 없음");
+check("StompWebSocketClient" in stompApi, "ws-client-pack/stomp 에 StompWebSocketClient 없음");
 const mqttApi = await import(resolve(root, "./dist/lib/mqtt.js"));
-check("MqttWebSocketClient" in mqttApi, "ws-pack/mqtt 에 MqttWebSocketClient 없음");
+check("MqttWebSocketClient" in mqttApi, "ws-client-pack/mqtt 에 MqttWebSocketClient 없음");
 
 // 워커 진입점은 부수 효과 스크립트라 존재만 확인한다 (워커 밖에서는 self 가 없어 실행하지 않는다)
 for (const name of ["./worker", "./worker/stomp", "./worker/mqtt"]) {

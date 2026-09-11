@@ -42,9 +42,9 @@ flowchart LR
 
 ```ts
 // 소비자의 워커 파일
-import "ws-pack/worker";        // 허브 — 순수 WebSocket 포함
-import "ws-pack/worker/stomp";  // 이 워커가 STOMP 를 쓸 때만
-import "ws-pack/worker/mqtt";   // 이 워커가 MQTT 를 쓸 때만
+import "ws-client-pack/worker";        // 허브 — 순수 WebSocket 포함
+import "ws-client-pack/worker/stomp";  // 이 워커가 STOMP 를 쓸 때만
+import "ws-client-pack/worker/mqtt";   // 이 워커가 MQTT 를 쓸 때만
 ```
 
 프로토콜 등록을 나눈 이유도 번들이다. 허브가 셋을 직접 참조하면 MQTT 만 쓰는 워커가 stompjs 를
@@ -139,7 +139,7 @@ SharedWorker 에는 **포트가 닫혔다는 이벤트가 없다.** 탭이 정�
 | 걷어내기 주기 | 15초 | 워커 주소의 `?sweepIntervalMs=` |
 
 ```ts
-const url = new URL("ws-pack/worker", import.meta.url);
+const url = new URL("ws-client-pack/worker", import.meta.url);
 url.searchParams.set("staleAfterMs", "120000"); // 더 너그럽게
 new SharedWorker(url, { type: "module" });
 ```

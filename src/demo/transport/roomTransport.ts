@@ -73,7 +73,7 @@ const reconnect = {
 const heartbeat = {
   intervalMs: 15_000,
   timeoutMs: 5_000,
-  ping: "__ws-pack-ping__",
+  ping: "__ws-client-pack-ping__",
 };
 
 /**
@@ -131,7 +131,7 @@ function stompTransport(room: string): RoomTransport {
     brokerURL,
     connectHeaders: { login, passcode },
     reconnect,
-    revalidateDestination: "/topic/ws-pack.revalidate",
+    revalidateDestination: "/topic/ws-client-pack.revalidate",
   });
 
   return {
@@ -201,7 +201,7 @@ function workerConfig(protocol: Protocol, room: string): WorkerClientConfig {
           brokerURL,
           connectHeaders: { login, passcode },
           reconnect,
-          revalidateDestination: "/topic/ws-pack.revalidate",
+          revalidateDestination: "/topic/ws-client-pack.revalidate",
         },
       };
     case "window":
@@ -228,10 +228,10 @@ let shared: SharedWorker | undefined;
 
 function workerFor(mode: Exclude<TransportMode, "main">): Worker | SharedWorker {
   if (mode === "shared") {
-    shared ??= new SharedWorker(workerURL, { type: "module", name: "ws-pack-demo" });
+    shared ??= new SharedWorker(workerURL, { type: "module", name: "ws-client-pack-demo" });
     return shared;
   }
-  dedicated ??= new Worker(workerURL, { type: "module", name: "ws-pack-demo" });
+  dedicated ??= new Worker(workerURL, { type: "module", name: "ws-client-pack-demo" });
   return dedicated;
 }
 

@@ -5,8 +5,8 @@ import "../mqtt";
  *
  * ```ts
  * // 소비자의 워커 파일
- * import "ws-pack/worker";
- * import "ws-pack/worker/mqtt";
+ * import "ws-client-pack/worker";
+ * import "ws-client-pack/worker/mqtt";
  * ```
  *
  * 브라우저 번들 기준 mqtt 는 360KB 가 넘는다. 쓰지 않는 워커가 그것을 싣지 않도록 분리했다.

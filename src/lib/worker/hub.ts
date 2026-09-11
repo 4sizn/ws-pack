@@ -379,7 +379,7 @@ export class WorkerHub {
  * 설정을 실제 클라이언트로 바꾼다.
  *
  * 프로토콜 구현은 등록소에서 가져온다 — 허브가 세 프로토콜을 직접 참조하면, 워커 번들이
- * 쓰지도 않는 라이브러리를 끌고 들어온다. 워커 파일에서 `import "ws-pack/worker/stomp"` 처럼
+ * 쓰지도 않는 라이브러리를 끌고 들어온다. 워커 파일에서 `import "ws-client-pack/worker/stomp"` 처럼
  * 필요한 것만 등록한다.
  */
 export function defaultClientFactory(config: WorkerClientConfig): HubClient {

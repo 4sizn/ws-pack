@@ -36,7 +36,7 @@ export interface WorkerWebSocketClientOptions {
  * 라이브러리가 대신하면 안 된다.
  *
  * ```ts
- * const worker = new SharedWorker(new URL("ws-pack/worker", import.meta.url), { type: "module" });
+ * const worker = new SharedWorker(new URL("ws-client-pack/worker", import.meta.url), { type: "module" });
  * const client = new WorkerWebSocketClient(worker, { protocol: "stomp", options: { brokerURL } });
  * ```
  *
