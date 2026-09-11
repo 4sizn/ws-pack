@@ -6,12 +6,12 @@
   "author": "heeseok shin",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/4sizn/ws-pack.git"
+    "url": "git+https://github.com/4sizn/ws-client-pack.git"
   },
   "bugs": {
-    "url": "https://github.com/4sizn/ws-pack/issues"
+    "url": "https://github.com/4sizn/ws-client-pack/issues"
   },
-  "homepage": "https://github.com/4sizn/ws-pack#readme",
+  "homepage": "https://github.com/4sizn/ws-client-pack#readme",
   "keywords": [
     "websocket",
     "stomp",
