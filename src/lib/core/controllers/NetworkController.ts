@@ -1,4 +1,3 @@
-import type { IMessage, StompHeaders } from "@stomp/stompjs";
 import {
   BehaviorSubject,
   catchError,
@@ -22,18 +21,6 @@ import {
   timer,
 } from "rxjs";
 import { AbstractController } from "../abstract/AbstractController";
-import {
-  type MqttMessage,
-  type MqttSendOptions,
-  type MqttSubscribeOptions,
-  MqttWebSocketClientAdapter,
-  type MqttWebSocketClientOptions,
-} from "../adapters/MqttWebSocketClientAdapter";
-import {
-  type StompSendOptions,
-  StompWebSocketClientAdapter,
-  type StompWebSocketClientOptions,
-} from "../adapters/StompWebSocketClientAdapter";
 import type { IWebSocketClientAdapter, SendArgs } from "../adapters/WebSocketClientAdapter";
 import {
   WindowWebSocketClientAdapter,
@@ -41,7 +28,6 @@ import {
 } from "../adapters/WindowWebSocketClientAdapter";
 import type { DisconnectInfo, SocketCloseInfo } from "../CloseInfo";
 import { ConnectionState } from "../ConnectionState";
-import type { PubSubAble } from "../PubSubAble";
 import type { AbstractPlugin } from "../plugins/AbstractPlugin";
 import {
   computeReconnectDelay,
@@ -568,57 +554,5 @@ export class WindowWebSocketController extends WebSocketController<string> {
 
   protected createAdapter(): IWebSocketClientAdapter<undefined, string> {
     return new WindowWebSocketClientAdapter(this.options);
-  }
-}
-
-export class StompWebSocketController
-  extends WebSocketController<IMessage, StompSendOptions, StompWebSocketClientAdapter>
-  implements PubSubAble<IMessage, StompHeaders>
-{
-  public readonly name = "StompWebSocketController";
-
-  constructor(private readonly options: StompWebSocketClientOptions) {
-    super(options.reconnect);
-    for (const plugin of options.plugins ?? []) {
-      this.addPlugin(plugin);
-    }
-  }
-
-  protected createAdapter(): StompWebSocketClientAdapter {
-    return new StompWebSocketClientAdapter(this.options);
-  }
-
-  /**
-   * STOMP destination 구독. connect() 전에 불러도 되고(연결되면 걸림), 재연결되면 자동으로 다시 걸린다.
-   * 반환 Observable 을 unsubscribe 하면 STOMP 구독도 해제된다.
-   */
-  public subscribe(destination: string, headers?: StompHeaders): Observable<IMessage> {
-    return this.ensureAdapter().subscribe(destination, headers);
-  }
-}
-
-export class MqttWebSocketController
-  extends WebSocketController<MqttMessage, MqttSendOptions, MqttWebSocketClientAdapter>
-  implements PubSubAble<MqttMessage, MqttSubscribeOptions>
-{
-  public readonly name = "MqttWebSocketController";
-
-  constructor(private readonly options: MqttWebSocketClientOptions) {
-    super(options.reconnect);
-    for (const plugin of options.plugins ?? []) {
-      this.addPlugin(plugin);
-    }
-  }
-
-  protected createAdapter(): MqttWebSocketClientAdapter {
-    return new MqttWebSocketClientAdapter(this.options);
-  }
-
-  /**
-   * topic 필터 구독. connect() 전에 불러도 되고(연결되면 걸림), 재연결되면 자동으로 다시 걸린다.
-   * 반환 Observable 을 unsubscribe 하면 브로커 구독도 해제된다.
-   */
-  public subscribe(filter: string, options?: MqttSubscribeOptions): Observable<MqttMessage> {
-    return this.ensureAdapter().subscribe(filter, options);
   }
 }

@@ -13,7 +13,7 @@ const log = (line: string) => {
   output.textContent = lines.join("\n");
 };
 
-const worker = new SharedWorker(new URL("../lib/worker/socket-worker.ts", import.meta.url), {
+const worker = new SharedWorker(new URL("./demo-worker.ts", import.meta.url), {
   type: "module",
   name: "ws-pack",
 });

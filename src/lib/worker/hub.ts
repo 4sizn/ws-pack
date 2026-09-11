@@ -1,12 +1,11 @@
-import { map, type Observable, type Subscription } from "rxjs";
+import { EMPTY, map, type Observable, type Subscription } from "rxjs";
 import type { DisconnectInfo } from "../core/CloseInfo";
 import type { ConnectionState } from "../core/ConnectionState";
+import type { NetworkClient } from "../core/NetworkClient";
+import { createProtocolClient } from "../core/protocolRegistry";
+// 워커 안에서도 순수 WebSocket 은 기본으로 쓸 수 있어야 한다.
+import "../core/windowProtocol";
 import type { ReconnectInfo } from "../core/Reconnect";
-import {
-  MqttWebSocketClient,
-  StompWebSocketClient,
-  WindowWebSocketClient,
-} from "../core/WebSocketClient";
 import type {
   MessageLike,
   WireMessage,
@@ -296,55 +295,61 @@ export class WorkerHub {
   }
 }
 
-/** 설정을 실제 클라이언트로 바꾼다. 프로토콜 타입이 등장하는 유일한 곳. */
+/**
+ * 설정을 실제 클라이언트로 바꾼다.
+ *
+ * 프로토콜 구현은 등록소에서 가져온다 — 허브가 세 프로토콜을 직접 참조하면, 워커 번들이
+ * 쓰지도 않는 라이브러리를 끌고 들어온다. 워커 파일에서 `import "ws-pack/worker/stomp"` 처럼
+ * 필요한 것만 등록한다.
+ */
 export function defaultClientFactory(config: WorkerClientConfig): HubClient {
+  const client = createProtocolClient(config.protocol, config.options) as ProtocolClient;
+
   switch (config.protocol) {
-    case "window": {
-      const client = new WindowWebSocketClient(config.options);
-      return withMessages(client, client.message$.pipe(map((body) => ({ body }))));
-    }
-    case "stomp": {
-      const client = new StompWebSocketClient(config.options);
+    case "window":
+      return withMessages(client, client.message$.pipe(map((body) => ({ body: String(body) }))));
+    case "stomp":
       return withMessages(
         client,
-        client.message$.pipe(map(toWireMessage)),
+        client.message$.pipe(map((message) => toWireMessage(message as StompLike))),
         (destination, options) =>
           client
-            .subscribe(destination, options as Parameters<typeof client.subscribe>[1])
-            .pipe(map(toWireMessage)),
+            .subscribe?.(destination, options)
+            .pipe(map((message) => toWireMessage(message as StompLike))) ?? EMPTY,
       );
-    }
-    case "mqtt": {
-      const client = new MqttWebSocketClient(config.options);
+    case "mqtt":
       return withMessages(
         client,
-        client.message$.pipe(
-          map((message) => ({ body: message.body, destination: message.topic })),
-        ),
+        client.message$.pipe(map((message) => toMqttWire(message as MqttLike))),
         (destination, options) =>
-          client
-            .subscribe(destination, options as Parameters<typeof client.subscribe>[1])
-            .pipe(map((message) => ({ body: message.body, destination: message.topic }))),
+          client.subscribe?.(destination, options).pipe(map((m) => toMqttWire(m as MqttLike))) ??
+          EMPTY,
       );
-    }
   }
+}
+
+/** 등록소가 돌려주는 클라이언트에서 허브가 쓰는 부분만 좁혀 본다. */
+type ProtocolClient = NetworkClient<unknown, never> & {
+  subscribe?: (destination: string, options?: unknown) => Observable<unknown>;
+};
+
+interface StompLike {
+  body: string;
+  headers: Record<string, string>;
+}
+
+interface MqttLike {
+  body: string;
+  topic: string;
+}
+
+function toMqttWire(message: MqttLike): WireMessage {
+  return { body: message.body, destination: message.topic };
 }
 
 /** 프로토콜별 클라이언트를 HubClient 모양으로 맞춘다. */
 function withMessages(
-  client: {
-    connect(): Promise<void>;
-    disconnect(): Promise<void>;
-    send(data: string, ...args: never[]): void;
-    revalidate(timeoutMs?: number): Promise<boolean>;
-    connectionChanges$: Observable<ConnectionState>;
-    connect$: Observable<void>;
-    disconnect$: Observable<DisconnectInfo>;
-    error$: Observable<Error>;
-    reconnectAttempt$: Observable<ReconnectInfo>;
-    maxReconnectReached$: Observable<void>;
-    connectionState: ConnectionState;
-  },
+  client: ProtocolClient,
   message$: Observable<WireMessage>,
   subscribe?: (destination: string, options?: unknown) => Observable<WireMessage>,
 ): HubClient {

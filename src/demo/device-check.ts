@@ -1,6 +1,9 @@
 import { EMPTY, firstValueFrom, type Observable, timeout } from "rxjs";
 import type { NetworkClient, WireMessage, WorkerClientConfig, WorkerMode } from "../lib";
 import { createWorkerClient, randomId, supportedWorkerModes } from "../lib";
+// 메인 스레드 모드에서 쓸 프로토콜 구현을 등록한다. 진입점 import 가 곧 등록이다.
+import "../lib/stomp";
+import "../lib/mqtt";
 
 /**
  * 기기 점검 페이지.
@@ -83,7 +86,7 @@ async function check(protocol: Protocol, mode: WorkerMode): Promise<Outcome> {
   const chosen = createWorkerClient({
     config: configFor(protocol, room),
     prefer: [mode],
-    workerUrl: new URL("../lib/worker/socket-worker.ts", import.meta.url),
+    workerUrl: new URL("./demo-worker.ts", import.meta.url),
     workerOptions: { type: "module", name: `check-${protocol}-${mode}` },
     key: `${protocol}:${room}`,
   });
