@@ -47,6 +47,13 @@ jobs:
   # 브라우저를 받아야 해서 빠른 검사와 분리해 병렬로 돌린다.
   e2e:
     runs-on: ubuntu-latest
+    # 엔진마다 러너를 따로 쓴다. 한 러너에서 셋을 순서대로 돌리면 그만큼 기다린다 —
+    # 검사 자체는 소켓을 쓰기 때문에 잡 안에서는 계속 직렬이다(playwright.config.ts 의 workers: 1).
+    strategy:
+      # 크로미움이 깨져도 웹킷 결과는 보고 싶다. 엔진별 차이가 곧 이 검사의 목적이다.
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
     steps:
       - uses: actions/checkout@v7
 
@@ -57,8 +64,17 @@ jobs:
       - name: Install
         run: bun install --frozen-lockfile
 
+      # 브라우저는 매번 받으면 40초가 그냥 나간다. playwright 버전이 바뀔 때만 다시 받게
+      # 락파일 해시를 키에 넣는다.
+      - name: Cache browser
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ matrix.browser }}-${{ hashFiles('bun.lock') }}
+
+      # 캐시가 맞으면 내려받기는 건너뛰고 시스템 라이브러리만 맞춘다.
       - name: Install browser
-        run: bunx playwright install --with-deps chromium webkit firefox
+        run: bunx playwright install --with-deps ${{ matrix.browser }}
 
       # STOMP 브로커는 도커로 띄운다. 서비스 컨테이너로는 web_stomp 플러그인을 켜는 명령을
       # 줄 수 없어서, 로컬과 같은 compose 파일을 그대로 쓴다.
@@ -67,13 +83,14 @@ jobs:
 
       # 순수 WebSocket 과 MQTT 서버는 playwright 설정이 직접 띄운다.
       - name: E2E
-        run: bun run e2e
+        run: bun run e2e -- --project=${{ matrix.browser }}
         env:
           E2E_STOMP: "1"
 
       - uses: actions/upload-artifact@v7
         if: failure()
         with:
-          name: playwright-trace
+          # 잡마다 이름이 달라야 한다. 같으면 나중 잡이 올릴 때 충돌한다.
+          name: playwright-trace-${{ matrix.browser }}
           path: test-results/
           retention-days: 7

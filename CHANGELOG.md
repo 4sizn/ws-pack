@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The browser tests now run one engine per CI job instead of three in sequence, and the downloaded browser is cached between runs. Each job still runs its own tests serially, since they share sockets.
+
 ### Fixed
 
 - Dependabot now uses the `bun` ecosystem instead of `npm`. Under `npm` it edited `package.json` without touching `bun.lock`, so every update pull request died at `bun install --frozen-lockfile`.
