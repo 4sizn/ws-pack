@@ -22,6 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The browser tests now retry twice on CI (and never locally). They drive real browsers and real sockets, so a slow runner could fail a green change; a test that passes on retry is reported as flaky and its failing trace is still uploaded.
+
 - `engines.node` is now `>=22`. Node 18 and 20 both reached end of life (April 2025 and April 2026), so the supported floor is the oldest release still receiving security fixes. Nothing in the shipped code needs Node 22 — the bump narrows what this package claims to support to what is actually maintained and tested.
 
 - `react` and `react-dom` moved to `devDependencies` and `rxjs` is now declared only as a peer dependency. The published package previously listed all three as runtime dependencies, so every consumer installed React and risked a duplicate RxJS copy.

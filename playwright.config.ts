@@ -14,6 +14,14 @@ export default defineConfig({
   testDir: "./e2e",
   timeout: 60_000,
   expect: { timeout: 15_000 },
+  /**
+   * CI 에서만 두 번 더 시도한다. 여기 검사는 진짜 브라우저와 진짜 소켓을 쓰기 때문에,
+   * 러너가 느린 순간 같은 코드가 실패로 보일 수 있다 — 그걸로 릴리스가 막히면 안 된다.
+   *
+   * 재시도가 결함을 덮지는 않는다. 재시도로 통과한 검사는 flaky 로 보고되고, 실패한 시도의
+   * 추적(trace)은 그대로 남아 올라간다. 로컬에서는 0 이다 — 고쳐야 할 실패를 숨기지 않는다.
+   */
+  retries: process.env.CI ? 2 : 0,
   fullyParallel: false,
   workers: 1,
   reporter: process.env.CI ? "list" : "line",
