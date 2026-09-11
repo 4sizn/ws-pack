@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- TypeScript moves to 7. Typecheck drops from seconds to well under one; the emitted `.d.ts` is unchanged in shape and still consumable by TypeScript 5.9.
+
 ### Fixed
 
 - `check:dist` now follows the built module graph instead of grepping one file, and it checks the worker protocol entry points too. Bundlers move shared code into chunks, which left the old check reading an entry file that no longer names the library — it both reported a false failure and would have missed a real leak through a chunk.
