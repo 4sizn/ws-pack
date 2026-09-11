@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Dependabot now uses the `bun` ecosystem instead of `npm`. Under `npm` it edited `package.json` without touching `bun.lock`, so every update pull request died at `bun install --frozen-lockfile`.
+
 ## [0.2.0] - 2026-09-11
 
 ### Added

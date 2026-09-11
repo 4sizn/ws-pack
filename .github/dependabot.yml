@@ -2,8 +2,13 @@ version: 2
 
 # 의존성 갱신을 사람 기억에 맡기지 않는다. 보안 수정은 늦게 아는 것이 곧 노출이다.
 updates:
-  # 이 저장소는 bun.lock 을 쓴다. npm 생태계 설정이 bun 락파일을 함께 다룬다.
-  - package-ecosystem: "npm"
+  # 이 저장소는 bun.lock 을 쓴다. npm 생태계로 두면 package.json 만 고치고 락파일을 두고 가서,
+  # CI 의 `bun install --frozen-lockfile` 이 전부 install 단계에서 죽는다(#35, #36, #37 이 그랬다).
+  #
+  # bun 생태계는 버전 갱신만 지원하고 보안 갱신 PR 은 만들지 않는다. 그 대가를 받아들이는 이유는,
+  # 이 패키지가 런타임 의존성을 하나도 싣지 않기 때문이다(`npm view ws-client-pack` → deps: none).
+  # 취약점은 CI 에만 닿고, 경보 자체는 Dependabot alerts 로 계속 온다.
+  - package-ecosystem: "bun"
     directory: "/"
     schedule:
       interval: "weekly"
