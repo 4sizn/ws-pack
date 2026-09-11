@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- End-to-end browser tests now run on Chromium, Firefox, and WebKit, and the device-check page shows both the requested and resolved worker mode so the fallback chain is visible per engine. (#21)
 - Reconnect delays now use equal jitter (`[base/2, base]`) by default. Opt out with `reconnect.jitter: false`. (#17)
 - End-to-end browser tests now cover STOMP alongside plain WebSocket and MQTT, bringing the browser matrix to nine protocol/mode pairs. (#16)
 - Added the documentation suite: README, `docs/architecture.md`, `docs/lifecycle.md`, and `docs/worker.md`. (#12)
@@ -18,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Minimum Node engine requirement raised from `>=18` to `>=22`. (#21)
 - Split the package into protocol-specific entry points: `ws-pack`, `ws-pack/stomp`, `ws-pack/mqtt`, and matching `/worker/*` paths. Protocol libraries are now optional peer dependencies. (#15)
 - The package is now publishable: MIT license, registry metadata, and a tarball limited to `dist`, `README.md`, and `LICENSE`. (#16)
 - The release workflow repeats CI checks on every `v*` tag and refuses to publish if the tag does not match `package.json`. (#16)
