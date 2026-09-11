@@ -77,11 +77,16 @@ function destinationFor(protocol: Protocol, room: string): string | undefined {
 async function check(protocol: Protocol, requestedMode: WorkerMode): Promise<Outcome> {
   const started = Date.now();
   const room = `device-${randomId().slice(0, 8)}`;
-  const finish = (status: Outcome["status"], detail: string): Outcome => ({
+  const finish = (
+    status: Outcome["status"],
+    detail: string,
+    resolvedMode: WorkerMode = requestedMode,
+    skipped: Outcome["skipped"] = [],
+  ): Outcome => ({
     protocol,
     requestedMode,
-    resolvedMode: requestedMode,
-    skipped: [],
+    resolvedMode,
+    skipped,
     status,
     detail,
     ms: Date.now() - started,
@@ -96,14 +101,12 @@ async function check(protocol: Protocol, requestedMode: WorkerMode): Promise<Out
   });
 
   if (chosen.mode !== requestedMode) {
-    return {
-      ...finish(
-        "건너뜀",
-        chosen.skipped.map((entry) => entry.reason).join(", ") || "폴백 경로가 이유 없이 변경됐다",
-      ),
-      skipped: chosen.skipped,
-      resolvedMode: chosen.mode,
-    };
+    return finish(
+      "건너뜀",
+      chosen.skipped.map((entry) => entry.reason).join(", ") || "폴백 경로가 이유 없이 변경됐다",
+      chosen.mode,
+      chosen.skipped,
+    );
   }
 
   const client = chosen.client as NetworkClient<WireMessage | string, unknown> & {
