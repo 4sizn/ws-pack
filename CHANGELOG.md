@@ -24,5 +24,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `revalidate()` now recovers from a `CLOSED` state by resetting the retry budget and starting a fresh connect, so foreground/online signals work after retries are exhausted. (#19)
 - MQTT no longer leaves the old socket open when a dead connection is replaced, preventing duplicate subscriptions after revalidation. (#13)
 - The test STOMP broker now replies with `RECEIPT` frames as the spec requires, so `revalidate()` probes report the correct liveness. (#13)
+
+### Changed
+
+- Documented the states in which `send()` throws and the recommended `connect$` flush pattern for app-level message queues. (#20)
+- Demo now queues pending messages and flushes them on `connect$`, matching the documented pattern.

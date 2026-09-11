@@ -261,9 +261,10 @@ function workerTransport(
         text,
         protocol === "window" ? undefined : sendOptionsOf(protocol, room),
       );
+      // 반환된 promise 의 거부는 RoomSession 플러시 루프가 처리한다.
+      // 여기서는 화면의 error$ 에만 넘기고 다시 던지지 않는다.
       promise.catch((error: Error) => {
         sendErrors.next(error);
-        throw error;
       });
       return promise;
     },

@@ -1,4 +1,4 @@
-import type { Subscription } from "rxjs";
+import { exhaustMap, Subject, type Subscription } from "rxjs";
 import type { ReconnectInfo } from "../../lib";
 import { ConnectionState, randomId } from "../../lib";
 import type { ChatMessage, ChatUser } from "../types";
@@ -52,10 +52,10 @@ export function idleSnapshot(seed: ChatMessage[]): RoomSnapshot {
  * RoomTransport 가 흡수한다 — 이 클래스는 STOMP 인지 순수 WebSocket 인지 모른다.
  *
  * React 와 분리된 평범한 클래스다. 밖으로는 (subscribe, getSnapshot) 만 열어두고,
- * 클라이언트 인스턴스 자체는 절대 내보내지 않는다 — 렌더 트리가 인스턴스를 직접 만지지 못하게 한다.
+ * 클라이언트 인스턴스 자체는 절대 낭볼내지 않는다 — 렌더 트리가 인스턴스를 직접 만지지 못하게 한다.
  */
 export class RoomSession {
-  /** 이 인스턴스가 보낸 메시지를 에코에서 구분하는 식별자. 인스턴스마다 다르다. */
+  /** 이 인스턴스가 본 메시지를 에코에서 구분하는 식별자. 인스턴스마다 다르다. */
   readonly clientId = randomId();
   /** 화면에 보여줄 실제 접속 대상 (destination 또는 URL) */
   readonly address: string;
@@ -68,7 +68,7 @@ export class RoomSession {
 
   #snapshot: RoomSnapshot;
   readonly #pendingPayloads: string[] = [];
-  #flushPending = false;
+  readonly #flush$ = new Subject<void>();
   #disposed = false;
 
   constructor(config: RoomSessionConfig) {
@@ -86,8 +86,11 @@ export class RoomSession {
         );
       }),
       this.#transport.connect$.subscribe(() => {
-        void this.#flushPendingPayloads();
+        this.#flush$.next();
       }),
+      // 동시에 여러 플러시 의도가 들어와도 하나씩 처리한다 —
+      // 진행 중인 루프가 이미 대기열을 훑고 있으므로 새 의도는 exhaustMap 이 버린다.
+      this.#flush$.pipe(exhaustMap(() => this.#flushQueue())).subscribe(),
       this.#transport.reconnectAttempt$.subscribe((reconnect) => this.#patch({ reconnect })),
       this.#transport.error$.subscribe((error) => this.#patch({ lastError: error.message })),
       // 예기치 않게 끊긴 경우엔 close code/reason 을 그대로 보여준다 (1006 = 비정상 종료 등).
@@ -136,7 +139,7 @@ export class RoomSession {
     if (this.#disposed) return;
     const payload = JSON.stringify(buildPayload(this.clientId, this.#me, text));
     this.#pendingPayloads.push(payload);
-    void this.#flushPendingPayloads();
+    this.#flush$.next();
   }
 
   /** 세션 폐기. 구독을 끊고 소켓을 닫는다. 폐기한 세션은 재사용하지 않는다. */
@@ -147,6 +150,7 @@ export class RoomSession {
       subscription.unsubscribe();
     }
     this.#listeners.clear();
+    this.#flush$.complete();
     void this.#transport.disconnect();
     // 워커 손잡이처럼 종료와 별개로 놓아야 하는 자원을 정리한다.
     this.#transport.release?.();
@@ -169,31 +173,24 @@ export class RoomSession {
     }
   }
 
-  async #flushPendingPayloads(): Promise<void> {
-    if (this.#flushPending || this.#disposed) return;
-    this.#flushPending = true;
-
-    try {
-      while (this.#pendingPayloads.length > 0 && !this.#disposed) {
-        const payload = this.#pendingPayloads[0];
-        if (payload === undefined) {
-          break;
-        }
-
-        try {
-          const maybePromise = this.#transport.say(payload);
-          if (typeof (maybePromise as Promise<void>)?.then === "function") {
-            await maybePromise;
-          }
-          this.#pendingPayloads.shift();
-          this.#patch({ lastError: null });
-        } catch (error) {
-          this.#patch({ lastError: (error as Error).message });
-          break;
-        }
+  async #flushQueue(): Promise<void> {
+    while (this.#pendingPayloads.length > 0 && !this.#disposed) {
+      const payload = this.#pendingPayloads[0];
+      if (payload === undefined) {
+        break;
       }
-    } finally {
-      this.#flushPending = false;
+
+      try {
+        const result = this.#transport.say(payload);
+        if (typeof (result as PromiseLike<void>)?.then === "function") {
+          await result;
+        }
+        this.#pendingPayloads.shift();
+        this.#patch({ lastError: null });
+      } catch (error) {
+        this.#patch({ lastError: (error as Error).message });
+        break;
+      }
     }
   }
 }
