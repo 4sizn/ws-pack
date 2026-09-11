@@ -19,7 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Minimum Node engine requirement raised from `>=18` to `>=22`. (#21)
+- Documented the states in which `send()` throws and the recommended `connect$` flush pattern for app-level message queues. (#20)
+- Demo now queues pending messages and flushes them on `connect$`, matching the documented pattern.
 - Split the package into protocol-specific entry points: `ws-pack`, `ws-pack/stomp`, `ws-pack/mqtt`, and matching `/worker/*` paths. Protocol libraries are now optional peer dependencies. (#15)
 - The package is now publishable: MIT license, registry metadata, and a tarball limited to `dist`, `README.md`, and `LICENSE`. (#16)
 - The release workflow repeats CI checks on every `v*` tag and refuses to publish if the tag does not match `package.json`. (#16)
@@ -29,8 +30,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `revalidate()` now recovers from a `CLOSED` state by resetting the retry budget and starting a fresh connect, so foreground/online signals work after retries are exhausted. (#19)
 - MQTT no longer leaves the old socket open when a dead connection is replaced, preventing duplicate subscriptions after revalidation. (#13)
 - The test STOMP broker now replies with `RECEIPT` frames as the spec requires, so `revalidate()` probes report the correct liveness. (#13)
-
-### Changed
-
-- Documented the states in which `send()` throws and the recommended `connect$` flush pattern for app-level message queues. (#20)
-- Demo now queues pending messages and flushes them on `connect$`, matching the documented pattern.
