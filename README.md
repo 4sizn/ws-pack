@@ -220,7 +220,10 @@ git config core.hooksPath .githooks   # tsc + biome + bun test
 - [구조와 클래스 관계](docs/architecture.md) — 계층, 클래스 다이어그램, 각 계층이 무엇을 소유하는가
 - [연결 수명](docs/lifecycle.md) — 상태 기계, 의도 스트림, 재연결, revalidate, 폐기
 - [워커](docs/worker.md) — 페이지 ↔ 포트 ↔ 허브, 연결 공유와 참조 수명
+- [릴리스](docs/releasing.md) — 버전 정책과 발행 절차
 
 ## 라이선스
 
-미정 (`private: true` — 아직 배포하지 않는다).
+MIT. 자세한 내용은 [LICENSE](LICENSE).
+
+발행 절차와 버전 정책은 [docs/releasing.md](docs/releasing.md) 에 있다.

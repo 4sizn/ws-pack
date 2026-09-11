@@ -1,0 +1,59 @@
+name: Release
+
+# v* 태그를 밀면 npm 에 올라간다. 발행을 사람이 태그로 결정하게 두는 이유는,
+# npm publish 가 사실상 되돌릴 수 없기 때문이다(72시간 뒤에는 unpublish 도 막힌다).
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+  id-token: write # npm provenance
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      # npm publish 와 provenance 를 위해 Node 도 필요하다.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      # 태그가 검증을 건너뛰는 지름길이 되지 않게, 발행 전에 같은 검사를 다시 돌린다.
+      - name: Verify
+        run: |
+          bunx tsc -b
+          bunx biome check .
+          bun run test
+
+      - name: Build
+        run: bun run build:lib
+
+      - name: Check package entry points
+        run: bun run check:dist
+
+      # 태그와 package.json 의 버전이 어긋난 채로 발행되는 사고를 막는다.
+      - name: Check tag matches version
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG=$(node -p "require('./package.json').version")
+          if [ "$TAG" != "$PKG" ]; then
+            echo "태그($TAG)와 package.json($PKG)의 버전이 다르다"
+            exit 1
+          fi
+
+      - name: Publish
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

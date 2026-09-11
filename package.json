@@ -1,46 +1,30 @@
 {
   "name": "ws-pack",
-  "private": true,
-  "version": "0.0.1",
-  "type": "module",
-  "scripts": {
-    "build": "bun run build:lib",
-    "build:demo": "tsc -b && vite build",
-    "build:lib": "tsc -p tsconfig.build.json && vite build -c vite.lib.config.ts",
-    "check:dist": "bun scripts/check-dist.ts",
-    "dev": "vite",
-    "e2e": "playwright test",
-    "e2e:install": "playwright install --with-deps chromium",
-    "format": "biome format --write .",
-    "lint": "biome check .",
-    "lint:fix": "biome check --write .",
-    "mqtt:server": "bun server/mqtt-server.ts",
-    "preview": "vite preview",
-    "stomp:down": "docker compose -f docker-compose.test.yml down -v",
-    "stomp:up": "docker compose -f docker-compose.test.yml up -d --wait",
-    "test": "bun test ./test",
-    "ws:server": "bun server/echo-server.ts"
-  },
-  "dependencies": {
-    "react": "^19.2.0",
-    "react-dom": "^19.2.0",
-    "rxjs": "^7.8.2"
-  },
-  "devDependencies": {
-    "@biomejs/biome": "^2.5.12",
-    "@playwright/test": "^1.63.0",
-    "@stomp/stompjs": "7.3.0",
-    "@types/react": "^19.2.0",
-    "@types/react-dom": "^19.2.0",
-    "@types/ws": "^8.18.1",
-    "@vitejs/plugin-react": "^5.0.0",
-    "aedes": "^1.1.2",
-    "mqtt": "^5.15.2",
-    "typescript": "^5.9.0",
-    "vite": "^7.1.0",
-    "ws": "^8.21.3"
-  },
+  "version": "0.1.0",
   "description": "WebSocket 클라이언트 패키지 — STOMP / 순수 WebSocket / MQTT 를 같은 표면으로, Worker·SharedWorker 위에서도.",
+  "license": "MIT",
+  "author": "heeseok shin",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/4sizn/ws-pack.git"
+  },
+  "bugs": {
+    "url": "https://github.com/4sizn/ws-pack/issues"
+  },
+  "homepage": "https://github.com/4sizn/ws-pack#readme",
+  "keywords": [
+    "websocket",
+    "stomp",
+    "mqtt",
+    "sharedworker",
+    "worker",
+    "rxjs",
+    "reconnect"
+  ],
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
   "sideEffects": [
     "./dist/lib/worker.js",
     "./dist/lib/worker-stomp.js",
@@ -52,7 +36,8 @@
   "files": [
     "dist/lib",
     "dist/types",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "exports": {
     ".": {
@@ -83,6 +68,33 @@
   },
   "types": "./dist/types/index.d.ts",
   "module": "./dist/lib/index.js",
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "scripts": {
+    "build": "bun run build:lib",
+    "build:demo": "tsc -b && vite build",
+    "build:lib": "tsc -p tsconfig.build.json && vite build -c vite.lib.config.ts",
+    "check:dist": "bun scripts/check-dist.ts",
+    "dev": "vite",
+    "e2e": "playwright test",
+    "e2e:install": "playwright install --with-deps chromium",
+    "format": "biome format --write .",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "mqtt:server": "bun server/mqtt-server.ts",
+    "preview": "vite preview",
+    "stomp:down": "docker compose -f docker-compose.test.yml down -v",
+    "stomp:up": "docker compose -f docker-compose.test.yml up -d --wait",
+    "test": "bun test ./test",
+    "ws:server": "bun server/echo-server.ts"
+  },
+  "dependencies": {
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "rxjs": "^7.8.2"
+  },
   "peerDependencies": {
     "@stomp/stompjs": "7.3.0",
     "mqtt": "^5.15.2",
@@ -95,5 +107,19 @@
     "mqtt": {
       "optional": true
     }
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.12",
+    "@playwright/test": "^1.63.0",
+    "@stomp/stompjs": "7.3.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@types/ws": "^8.18.1",
+    "@vitejs/plugin-react": "^5.0.0",
+    "aedes": "^1.1.2",
+    "mqtt": "^5.15.2",
+    "typescript": "^5.9.0",
+    "vite": "^7.1.0",
+    "ws": "^8.21.3"
   }
 }
