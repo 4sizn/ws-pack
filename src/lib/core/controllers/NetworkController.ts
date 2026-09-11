@@ -30,7 +30,7 @@ import type { DisconnectInfo, SocketCloseInfo } from "../CloseInfo";
 import { ConnectionState } from "../ConnectionState";
 import type { AbstractPlugin } from "../plugins/AbstractPlugin";
 import {
-  computeReconnectDelay,
+  nextReconnectDelay,
   type ReconnectConfig,
   type ReconnectInfo,
   type ResolvedReconnectConfig,
@@ -404,7 +404,7 @@ export abstract class WebSocketController<
           this.#reconnectAttempts = retryCount;
           this.#setState(ConnectionState.RECONNECTING);
           this.#reconnectAttemptSubject.next(this.reconnectInfo);
-          return timer(computeReconnectDelay(this.#reconnect, retryCount));
+          return timer(nextReconnectDelay(this.#reconnect, retryCount));
         },
       }),
       catchError((cause) => {

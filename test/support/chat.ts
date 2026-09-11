@@ -57,12 +57,16 @@ export interface ChatDriver {
   member(backend: ChatBackend, room: string): ChatMember;
 }
 
-/** 테스트용 재연결 정책: 짧고 고정 간격. 지수 백오프 계산은 별도 단위 테스트 몫. */
+/**
+ * 테스트용 재연결 정책: 짧고 고정 간격, 지터 없음.
+ * 백오프 계산과 지터는 별도 단위 테스트 몫이라 여기선 대기 시간이 흔들리지 않아야 한다.
+ */
 const reconnect = {
   maxAttempts: 3,
   delay: 50,
   timeMode: ReconnectTimeMode.INTERVAL,
   maxDelay: 50,
+  jitter: false,
 };
 
 interface StompBackend extends ChatBackend {

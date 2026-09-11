@@ -76,9 +76,16 @@ new StompWebSocketClient({
     delay: 1000,
     timeMode: ReconnectTimeMode.EXPONENTIAL, // 또는 INTERVAL
     maxDelay: 30_000,
+    jitter: true,                          // 기본 켜짐. 끄면 계산된 지연을 그대로 쓴다
   },
 });
 ```
+
+`jitter` 는 계산된 지연을 `[delay/2, delay]` 안에서 흔든다(equal jitter). 서버 하나가 죽으면
+붙어 있던 클라이언트가 전부 같은 순간에 재시도한다 — 브라우저마다 시계가 달라도 실측하면 시도마다
+5ms 안에 몰린다. 되살아나는 서버를 그 무리가 다시 눕히지 않게 흩어 놓는다.
+full jitter(`[0, delay]`)를 쓰지 않는 이유는 이 라이브러리가 `maxAttempts` 에서 포기하기 때문이다.
+재시도 예산이 시간 창이라, full jitter 면 창이 평균 절반으로 줄어 사용자가 더 빨리 포기당한다.
 
 재연결 정책은 **Controller 가 소유**한다. stompjs/mqtt.js 각자의 재연결은 꺼 둔다 — 정책이
 라이브러리마다 흩어지면 프로토콜별로 동작이 갈린다. 예기치 않게 끊긴 경우에도 같은 정책으로 재시도하고,
