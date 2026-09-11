@@ -33,7 +33,6 @@ unpublish 도 막히고, 그 전에 지우더라도 같은 버전 번호는 영�
 gh run list --branch main --limit 1
 
 # 2. 버전을 올린다 (package.json 만 바꾸고 태그는 아직 만들지 않는다)
-#    CHANGELOG.md 의 Unreleased 섹션을 이번 버전으로 정리하고, 비어 있는 Unreleased 를 다시 둔다.
 npm version 0.2.0 --no-git-tag-version
 git commit -am "chore: 0.2.0"
 git push

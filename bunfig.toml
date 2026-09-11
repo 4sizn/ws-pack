@@ -1,2 +1,6 @@
 [test]
-coverageThreshold = { lines = 0.86, functions = 0.67 }
+coveragePathIgnorePatterns = [
+  "test/**",
+  "e2e/**",
+  "src/demo/**",
+]

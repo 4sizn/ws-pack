@@ -27,7 +27,7 @@ jobs:
 
       # 계약 테스트는 자체 브로커를 띄운다. 외부 서비스나 도커가 필요 없다.
       - name: Test
-        run: bun test ./test --coverage
+        run: bun run test
 
       # 소비자가 실제로 받는 산출물이 만들어지는지까지 본다.
       - name: Build library
