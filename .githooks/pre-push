@@ -1,0 +1,30 @@
+#!/bin/sh
+# main 으로 직접 푸시하는 것을 막는다.
+#
+# 이 저장소는 PR + squash 머지로 들어간다. main 에 직접 밀면 CI 가 릴리스 판단 근거로 쓰는
+# main 의 실행 결과가 검증 없이 바뀌고, PR 리뷰 단계가 통째로 사라진다.
+# GitHub 쪽 ruleset 이 최종 방어선이고, 이 훅은 30초 왕복 전에 로컬에서 먼저 알려준다.
+#
+# 클론마다 한 번:  git config core.hooksPath .githooks
+
+protected="refs/heads/main"
+
+while read -r _local_ref _local_sha remote_ref _remote_sha; do
+  if [ "$remote_ref" = "$protected" ]; then
+    current=$(git symbolic-ref --quiet --short HEAD || echo "detached HEAD")
+    cat >&2 <<MSG
+pre-push: main 으로 직접 푸시는 막혀 있다 (현재 브랜치: $current).
+
+브랜치를 따서 PR 로 올린다:
+  git switch -c <type>/<topic>
+  git push -u origin <type>/<topic>
+  gh pr create
+
+지금 작업을 건드리지 않고 따로 진행하려면 워크트리를 쓴다:
+  git worktree add ../ws-pack-<topic> -b <type>/<topic>
+MSG
+    exit 1
+  fi
+done
+
+exit 0
