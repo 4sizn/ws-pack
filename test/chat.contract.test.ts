@@ -1,15 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { ConnectionState } from "../src/lib";
 import { delay, inbox, waitFor, within } from "./support/async";
-import {
-  type ChatBackend,
-  type ChatDriver,
-  type ChatMember,
-  drivers,
-  mqttCredentialRefreshDriver,
-  mqttTokenRefreshDriver,
-  windowTokenRefreshDriver,
-} from "./support/chat";
+import { type ChatBackend, type ChatMember, drivers, mqttRefreshDriver } from "./support/chat";
 
 /**
  * 채팅 시나리오 = 이 라이브러리의 계약.
@@ -202,40 +194,24 @@ for (const driver of drivers) {
   });
 }
 
-const factoryRefreshDrivers: Array<{
-  driver: ChatDriver;
-  expected: string[];
-}> = [
-  { driver: windowTokenRefreshDriver, expected: ["expired", "fresh"] },
-  { driver: mqttTokenRefreshDriver, expected: ["expired", "fresh"] },
-  { driver: mqttCredentialRefreshDriver, expected: ["bad:bad", "good:good"] },
-];
+describe("팩토리 갱신으로 재시도 [mqtt refresh]", () => {
+  let backend: ChatBackend & { attempts: string[] };
+  let member: ChatMember;
 
-for (const { driver, expected } of factoryRefreshDrivers) {
-  const suite = driver.available ? describe : describe.skip;
-  const title = driver.available
-    ? `토큰 갱신 URL로 재시도 [${driver.name}]`
-    : `토큰 갱신 URL로 재시도 [${driver.name}] — 보류: ${driver.pendingReason}`;
-
-  suite(title, () => {
-    let backend: ChatBackend & { attempts: string[] };
-    let member: ChatMember;
-
-    beforeEach(async () => {
-      backend = (await driver.start()) as ChatBackend & { attempts: string[] };
-    });
-
-    afterEach(async () => {
-      await member?.disconnect().catch(() => {});
-      await backend.stop();
-    });
-
-    it("한 번 재시도한 뒤 갱신된 값을 사용한다", async () => {
-      member = driver.member(backend, "room-a");
-      await member.connect();
-
-      expect(backend.attempts).toEqual(expected);
-      expect(member.state).toBe(ConnectionState.OPEN);
-    });
+  beforeEach(async () => {
+    backend = (await mqttRefreshDriver.start()) as ChatBackend & { attempts: string[] };
   });
-}
+
+  afterEach(async () => {
+    await member?.disconnect().catch(() => {});
+    await backend.stop();
+  });
+
+  it("한 번 재시도한 뒤 갱신된 URL과 인증값을 사용한다", async () => {
+    member = mqttRefreshDriver.member(backend, "room-a");
+    await member.connect();
+
+    expect(backend.attempts).toEqual(["expired bad:bad", "fresh good:good"]);
+    expect(member.state).toBe(ConnectionState.OPEN);
+  });
+});

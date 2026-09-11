@@ -175,80 +175,28 @@ export const windowDriver: ChatDriver = {
   },
 };
 
-export const windowTokenRefreshDriver: ChatDriver = {
-  name: "window token refresh",
-  available: true,
-
-  async start(): Promise<ChatBackend> {
-    const attempts: string[] = [];
-    const server = new TestEchoServer({
-      accept: (token) => token !== "expired",
-      onConnect: (token) => attempts.push(token ?? "none"),
-    });
-    await server.start();
-    const backend: WindowBackend & { attempts: string[] } = {
-      url: server.url,
-      attempts,
-      get connectionCount() {
-        return server.connectionCount;
-      },
-      get subscriptionCount() {
-        return server.connectionCount;
-      },
-      killConnections: () => server.killConnections(),
-      mute: () => server.mute(),
-      unmute: () => server.unmute(),
-      stop: () => server.stop(),
-    };
-    return backend;
-  },
-
-  member(backend: ChatBackend & { attempts: string[] }, room: string): ChatMember {
-    const { url } = backend;
-    const tokens = ["expired", "fresh"];
-    let index = 0;
-    const client = new WindowWebSocketClient({
-      url: () => `${url}/?room=${encodeURIComponent(room)}&token=${tokens[index++] ?? "fresh"}`,
-      reconnect: {
-        maxAttempts: 3,
-        delay: 0,
-        timeMode: ReconnectTimeMode.INTERVAL,
-        maxDelay: 0,
-        jitter: false,
-      },
-      heartbeat: { intervalMs: 60_000, timeoutMs: 500, ping: "__ws-pack-ping__" },
-    });
-
-    return {
-      connect: () => client.connect(),
-      disconnect: () => client.disconnect(),
-      listen: () => client.message$,
-      say: (text) => client.send(text),
-      revalidate: (timeoutMs) => client.revalidate(timeoutMs),
-      get state() {
-        return client.connectionState;
-      },
-      stateChanges$: client.connectionChanges$,
-    };
-  },
-};
-
-interface MqttTokenBackend extends ChatBackend {
+interface MqttRefreshBackend extends ChatBackend {
   readonly attempts: string[];
 }
 
-export const mqttTokenRefreshDriver: ChatDriver = {
-  name: "mqtt token refresh",
+export const mqttRefreshDriver: ChatDriver = {
+  name: "mqtt refresh",
   available: true,
 
   async start(): Promise<ChatBackend> {
     const attempts: string[] = [];
+    let lastToken: string | null = null;
     const broker = new TestMqttBroker({
-      accept: (token) => token !== "expired",
-      onConnect: (token) => attempts.push(token ?? "none"),
+      onConnect: (token) => {
+        lastToken = token;
+      },
+      acceptCredentials: (username, password) => username !== "bad" && password !== "bad",
+      onAuthenticate: (username, password) => {
+        attempts.push(`${lastToken ?? "none"} ${username ?? "none"}:${password ?? "none"}`);
+      },
     });
     await broker.start();
-    const backend: MqttTokenBackend = {
+    const backend: MqttRefreshBackend = {
       url: broker.url,
       attempts,
       get connectionCount() {
@@ -265,78 +213,28 @@ export const mqttTokenRefreshDriver: ChatDriver = {
     return backend;
   },
 
-  member(backend: ChatBackend & MqttTokenBackend, room: string): ChatMember {
+  member(backend: ChatBackend & MqttRefreshBackend, room: string): ChatMember {
     const { url } = backend;
     const tokens = ["expired", "fresh"];
-    let index = 0;
-    const topic = `chat/${room}`;
-    const client = new MqttWebSocketClient({
-      brokerURL: () => `${url}/?token=${tokens[index++] ?? "fresh"}`,
-      reconnect: {
-        maxAttempts: 3,
-        delay: 0,
-        timeMode: ReconnectTimeMode.INTERVAL,
-        maxDelay: 0,
-        jitter: false,
-      },
-    });
-
-    return {
-      connect: () => client.connect(),
-      disconnect: () => client.disconnect(),
-      listen: () => client.subscribe(topic).pipe(map((message) => message.body)),
-      say: (text) => client.send(text, { topic }),
-      revalidate: (timeoutMs) => client.revalidate(timeoutMs),
-      get state() {
-        return client.connectionState;
-      },
-      stateChanges$: client.connectionChanges$,
-    };
-  },
-};
-
-export const mqttCredentialRefreshDriver: ChatDriver = {
-  name: "mqtt credential refresh",
-  available: true,
-
-  async start(): Promise<ChatBackend> {
-    const attempts: string[] = [];
-    const broker = new TestMqttBroker({
-      acceptCredentials: (username, password) => username !== "bad" && password !== "bad",
-      onAuthenticate: (username, password) =>
-        attempts.push(`${username ?? "none"}:${password ?? "none"}`),
-    });
-    await broker.start();
-    const backend: MqttTokenBackend = {
-      url: broker.url,
-      attempts,
-      get connectionCount() {
-        return broker.connectionCount;
-      },
-      get subscriptionCount() {
-        return broker.subscriptionCount;
-      },
-      killConnections: () => broker.killConnections(),
-      mute: () => broker.mute(),
-      unmute: () => broker.unmute(),
-      stop: () => broker.stop(),
-    };
-    return backend;
-  },
-
-  member(backend: ChatBackend & MqttTokenBackend, room: string): ChatMember {
-    const { url } = backend;
     const credentials = [
       { username: "bad", password: "bad" },
       { username: "good", password: "good" },
     ];
     let index = 0;
-    let current = credentials[0];
+    let current = {
+      token: tokens[0],
+      username: credentials[0].username,
+      password: credentials[0].password,
+    };
     let advancing: Promise<void> | undefined;
-    const nextPair = async () => {
+    const next = async () => {
       if (advancing) return advancing;
       advancing = Promise.resolve().then(() => {
-        current = credentials[index] ?? credentials[credentials.length - 1];
+        current = {
+          token: tokens[index] ?? tokens[tokens.length - 1],
+          username: credentials[index]?.username ?? credentials[credentials.length - 1].username,
+          password: credentials[index]?.password ?? credentials[credentials.length - 1].password,
+        };
         index++;
         advancing = undefined;
       });
@@ -344,9 +242,9 @@ export const mqttCredentialRefreshDriver: ChatDriver = {
     };
     const topic = `chat/${room}`;
     const client = new MqttWebSocketClient({
-      brokerURL: url,
-      username: () => nextPair().then(() => current.username),
-      password: () => nextPair().then(() => current.password),
+      brokerURL: () => next().then(() => `${url}/?token=${current.token}`),
+      username: () => next().then(() => current.username),
+      password: () => next().then(() => current.password),
       reconnect: {
         maxAttempts: 3,
         delay: 0,

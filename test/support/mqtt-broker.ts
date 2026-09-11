@@ -18,21 +18,18 @@ export class TestMqttBroker {
   /** clientId -> 구독 필터 수 */
   readonly #subscriptions = new Map<string, number>();
   #muted = false;
-  #accept: (token: string | null) => boolean;
   readonly #onConnect?: (token: string | null) => void;
   #acceptCredentials: (username: string | null, password: string | null) => boolean;
   readonly #onAuthenticate?: (username: string | null, password: string | null) => void;
 
   constructor(
     options: {
-      accept?: (token: string | null) => boolean;
       onConnect?: (token: string | null) => void;
       acceptCredentials?: (username: string | null, password: string | null) => boolean;
       onAuthenticate?: (username: string | null, password: string | null) => void;
     } = {},
   ) {
-    const { accept, onConnect, acceptCredentials, onAuthenticate } = options;
-    this.#accept = accept ?? (() => true);
+    const { onConnect, acceptCredentials, onAuthenticate } = options;
     this.#onConnect = onConnect;
     this.#acceptCredentials = acceptCredentials ?? (() => true);
     this.#onAuthenticate = onAuthenticate;
@@ -94,10 +91,6 @@ export class TestMqttBroker {
     wss.on("connection", (socket, request) => {
       const token = new URL(request.url ?? "/", "ws://localhost").searchParams.get("token");
       this.#onConnect?.(token);
-      if (!this.#accept(token)) {
-        socket.close();
-        return;
-      }
 
       this.#sockets.add(socket);
       socket.on("close", () => this.#sockets.delete(socket));
