@@ -65,6 +65,8 @@ export class WorkerWebSocketClient
     config: WorkerClientConfig,
     options: WorkerWebSocketClientOptions = {},
   ) {
+    assertCloneable(config);
+
     this.#port = toPort(target);
     this.#port.addEventListener("message", (event) => this.#receive(event.data as WorkerEvent));
     this.#port.start?.();
@@ -268,6 +270,23 @@ export class WorkerWebSocketClient
       case "exhausted":
         this.#exhaustedSubject.next();
         return;
+    }
+  }
+}
+
+/**
+ * 워커로 볼 설정에 복제 불가능한 값이 있는지 확인한다.
+ *
+ * `url`/`brokerURL`/`username`/`password` 는 Resolvable 로 함수를 받을 수 있지만,
+ * 워커 경로는 `postMessage` 를 타므로 함수가 복제되지 않는다. 조용히 잘리기 전에 명확히 실패한다.
+ */
+function assertCloneable(config: WorkerClientConfig): void {
+  const options = config.options as Record<string, unknown>;
+  for (const key of ["url", "brokerURL", "username", "password"] as const) {
+    if (typeof options[key] === "function") {
+      throw new Error(
+        `${config.protocol}.${key}에 함수를 넘길 수 없다. 워커 경로는 구조화 복제(structured clone)를 타므로 팩토리 대신 문자열/값을 사용한다.`,
+      );
     }
   }
 }

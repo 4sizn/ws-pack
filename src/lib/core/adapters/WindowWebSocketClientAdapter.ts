@@ -5,6 +5,8 @@ import type { AbstractPlugin, Logger } from "../plugins/AbstractPlugin";
 import type { ReconnectConfig } from "../Reconnect";
 import { WebSocketClientAdapter } from "./WebSocketClientAdapter";
 
+type Resolvable<T> = T | (() => T | Promise<T>);
+
 /** 브라우저 내장 `WebSocket` 생성자가 받는 인자 타입 (url, protocols) */
 type BrowserWebSocketArgs = ConstructorParameters<typeof WebSocket>;
 
@@ -33,8 +35,8 @@ export interface WindowHeartbeatConfig {
 }
 
 export interface WindowWebSocketClientOptions {
-  /** `new WebSocket(url, protocols)` 의 url과 동일한 타입 */
-  url: BrowserWebSocketArgs[0];
+  /** `new WebSocket(url, protocols)` 의 url. 문자열 또는 시도마다 평가되는 팩토리. */
+  url: Resolvable<BrowserWebSocketArgs[0]>;
   /** `new WebSocket(url, protocols)` 의 protocols와 동일한 타입 */
   protocols?: BrowserWebSocketArgs[1];
   /** 이미 만들어진 WebSocket 인스턴스를 주입. 없으면 어댑터가 내부에서 기본 생성한다. */
@@ -87,10 +89,20 @@ export class WindowWebSocketClientAdapter extends WebSocketClientAdapter<
   }
 
   public async connect(signal: AbortSignal): Promise<void> {
-    const { url, protocols, client } = this.#options;
+    const { protocols, client } = this.#options;
 
     // 이전 시도가 남긴 소켓을 먼저 놓는다 (연결 누수 방지).
     await this.disconnect();
+
+    let url: BrowserWebSocketArgs[0];
+    try {
+      url = await this.#resolveSignal(this.#options.url, signal);
+    } catch (error) {
+      if (!signal.aborted) {
+        for (const cb of this.#errorCallbacks) cb(this.#toError(error));
+      }
+      throw error;
+    }
 
     return new Promise<void>((resolve, reject) => {
       let settled = false;
@@ -317,5 +329,36 @@ export class WindowWebSocketClientAdapter extends WebSocketClientAdapter<
   /** 브라우저 소켓의 readyState. 소켓이 없으면 CLOSED. */
   public networkStatus(): number {
     return this.client?.readyState ?? READY_STATE_CLOSED;
+  }
+
+  /** 값이 함수면 1회 호출해서 Promise 로 합쳐 반환한다. 취소되면 즉시 reject, 리스너는 정리한다. */
+  #resolveSignal<T>(value: Resolvable<T>, signal: AbortSignal): Promise<T> {
+    if (signal.aborted) {
+      return Promise.reject(abortReason(signal));
+    }
+    return new Promise<T>((resolve, reject) => {
+      const onAbortListener = () => reject(abortReason(signal));
+      signal.addEventListener("abort", onAbortListener, { once: true });
+      try {
+        const resolved = typeof value === "function" ? (value as () => T | Promise<T>)() : value;
+        Promise.resolve(resolved).then(
+          (result) => {
+            signal.removeEventListener("abort", onAbortListener);
+            resolve(result);
+          },
+          (error) => {
+            signal.removeEventListener("abort", onAbortListener);
+            reject(error);
+          },
+        );
+      } catch (error) {
+        signal.removeEventListener("abort", onAbortListener);
+        reject(error);
+      }
+    });
+  }
+
+  #toError(error: unknown): Error {
+    return error instanceof Error ? error : new Error(String(error));
   }
 }

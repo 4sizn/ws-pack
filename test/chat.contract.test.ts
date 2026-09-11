@@ -1,7 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { ConnectionState } from "../src/lib";
 import { delay, inbox, waitFor, within } from "./support/async";
-import { type ChatBackend, type ChatMember, drivers } from "./support/chat";
+import {
+  type ChatBackend,
+  type ChatDriver,
+  type ChatMember,
+  drivers,
+  mqttCredentialRefreshDriver,
+  mqttTokenRefreshDriver,
+  windowTokenRefreshDriver,
+} from "./support/chat";
 
 /**
  * 채팅 시나리오 = 이 라이브러리의 계약.
@@ -190,6 +198,44 @@ for (const driver of drivers) {
 
       await within(me.disconnect(), 1000, "무응답 상태에서의 disconnect()");
       expect(me.state).toBe(ConnectionState.IDLE);
+    });
+  });
+}
+
+const factoryRefreshDrivers: Array<{
+  driver: ChatDriver;
+  expected: string[];
+}> = [
+  { driver: windowTokenRefreshDriver, expected: ["expired", "fresh"] },
+  { driver: mqttTokenRefreshDriver, expected: ["expired", "fresh"] },
+  { driver: mqttCredentialRefreshDriver, expected: ["bad:bad", "good:good"] },
+];
+
+for (const { driver, expected } of factoryRefreshDrivers) {
+  const suite = driver.available ? describe : describe.skip;
+  const title = driver.available
+    ? `토큰 갱신 URL로 재시도 [${driver.name}]`
+    : `토큰 갱신 URL로 재시도 [${driver.name}] — 보류: ${driver.pendingReason}`;
+
+  suite(title, () => {
+    let backend: ChatBackend & { attempts: string[] };
+    let member: ChatMember;
+
+    beforeEach(async () => {
+      backend = (await driver.start()) as ChatBackend & { attempts: string[] };
+    });
+
+    afterEach(async () => {
+      await member?.disconnect().catch(() => {});
+      await backend.stop();
+    });
+
+    it("한 번 재시도한 뒤 갱신된 값을 사용한다", async () => {
+      member = driver.member(backend, "room-a");
+      await member.connect();
+
+      expect(backend.attempts).toEqual(expected);
+      expect(member.state).toBe(ConnectionState.OPEN);
     });
   });
 }

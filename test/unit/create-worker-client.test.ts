@@ -95,4 +95,30 @@ describe("워커 모드 선택", () => {
 
     expect(supportedWorkerModes()).toEqual(["dedicated", "main"]);
   });
+
+  it("워커 경로에 팩토리 함수를 넘기면 즉시 실패한다", () => {
+    globals.SharedWorker = FakeSharedWorker;
+    globals.Worker = FakeWorker;
+
+    const badConfig: WorkerClientConfig = {
+      protocol: "window",
+      options: { url: () => "ws://example.invalid" },
+    };
+
+    expect(() => createWorkerClient({ config: badConfig, workerUrl: "worker.js" })).toThrow(
+      "url에 함수를 넘길 수 없다",
+    );
+  });
+
+  it("메인 스레드 경로는 팩토리 함수를 허용한다", () => {
+    globals.SharedWorker = undefined;
+    globals.Worker = undefined;
+
+    const factoryConfig: WorkerClientConfig = {
+      protocol: "window",
+      options: { url: () => "ws://example.invalid" },
+    };
+
+    expect(() => createWorkerClient({ config: factoryConfig, prefer: ["main"] })).not.toThrow();
+  });
 });

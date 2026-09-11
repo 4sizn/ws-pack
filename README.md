@@ -91,6 +91,37 @@ full jitter(`[0, delay]`)를 쓰지 않는 이유는 이 라이브러리가 `max
 라이브러리마다 흩어지면 프로토콜별로 동작이 갈린다. 예기치 않게 끊긴 경우에도 같은 정책으로 재시도하고,
 구독은 자동으로 다시 걸린다.
 
+## 동적 연결 주소와 인증
+
+`url`/`brokerURL`에 문자열 대신 팩토리를 넘기면 매 연결 시도마다 새 값을 만든다.
+짧은 수명의 토큰을 URL에 담는 경우, 연결이 끊긴 뒤에도 재시도할 때 만료된 토큰으로
+계속 실패하는 것을 막는다.
+
+```ts
+new WindowWebSocketClient({
+  url: async () => {
+    const token = await fetchToken();
+    return `wss://host/ws?token=${token}`;
+  },
+});
+```
+
+MQTT는 사용자명/비밀번호에도 같은 방식을 적용할 수 있다.
+
+```ts
+new MqttWebSocketClient({
+  brokerURL: async () => `wss://broker/ws?token=${await fetchToken()}`,
+  username: async () => await fetchUsername(),
+  password: async () => await fetchPassword(),
+});
+```
+
+팩토리가 던지면 해당 시도는 실패로 처리된다. `error$`로 원인이 나간 뒤 평소와 같은
+재연결 백오프를 타며, 아묻따 unhandled rejection이 되지는 않는다.
+
+워커를 쓰는 경우 설정은 구조화 복제(structured clone)를 타므로, 공유/전용 워커 모드에서는
+팩토리 대신 문자열/값을 넘겨야 한다.
+
 ## 죽은 연결 알아채기
 
 **주기적 하트비트** 가 1차 방어선이고, 프로토콜이 가진 것을 그대로 쓴다.

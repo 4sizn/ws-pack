@@ -11,6 +11,19 @@ export class TestEchoServer {
   #server?: WebSocketServer;
   readonly #rooms = new Map<WebSocket, string>();
   #mute = false;
+  #accept: (token: string | null) => boolean;
+  readonly #onConnect?: (token: string | null) => void;
+
+  constructor(
+    options: {
+      accept?: (token: string | null) => boolean;
+      onConnect?: (token: string | null) => void;
+    } = {},
+  ) {
+    const { accept, onConnect } = options;
+    this.#accept = accept ?? (() => true);
+    this.#onConnect = onConnect;
+  }
 
   get url(): string {
     const address = this.#server?.address();
@@ -26,7 +39,17 @@ export class TestEchoServer {
   }
 
   async start(): Promise<void> {
-    const server = new WebSocketServer({ port: 0 });
+    const server = new WebSocketServer({
+      port: 0,
+      // 핸드셰이크 단계에서 토큰을 거부하면 브라우저 WebSocket 이 open 이벤트 없이
+      // 바로 close 를 받는다. open 이 뒤늦게 뜨면 connect() 가 먼저 resolve 돼
+      // 재시도 검증이 흔들리기 때문에, 여기서 미리 끊는다.
+      verifyClient: (info, cb) => {
+        const token = new URL(info.req.url ?? "/", "ws://localhost").searchParams.get("token");
+        this.#onConnect?.(token);
+        cb(this.#accept(token));
+      },
+    });
     this.#server = server;
     await new Promise<void>((resolve) => server.once("listening", resolve));
 

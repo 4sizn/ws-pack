@@ -18,6 +18,25 @@ export class TestMqttBroker {
   /** clientId -> 구독 필터 수 */
   readonly #subscriptions = new Map<string, number>();
   #muted = false;
+  #accept: (token: string | null) => boolean;
+  readonly #onConnect?: (token: string | null) => void;
+  #acceptCredentials: (username: string | null, password: string | null) => boolean;
+  readonly #onAuthenticate?: (username: string | null, password: string | null) => void;
+
+  constructor(
+    options: {
+      accept?: (token: string | null) => boolean;
+      onConnect?: (token: string | null) => void;
+      acceptCredentials?: (username: string | null, password: string | null) => boolean;
+      onAuthenticate?: (username: string | null, password: string | null) => void;
+    } = {},
+  ) {
+    const { accept, onConnect, acceptCredentials, onAuthenticate } = options;
+    this.#accept = accept ?? (() => true);
+    this.#onConnect = onConnect;
+    this.#acceptCredentials = acceptCredentials ?? (() => true);
+    this.#onAuthenticate = onAuthenticate;
+  }
 
   get url(): string {
     const address = this.#http?.address();
@@ -40,7 +59,14 @@ export class TestMqttBroker {
   }
 
   async start(): Promise<void> {
-    const broker = await Aedes.createBroker();
+    const broker = await Aedes.createBroker({
+      authenticate: (_client, username, password, done) => {
+        const user = username ?? null;
+        const pass = password ? password.toString() : null;
+        this.#onAuthenticate?.(user, pass);
+        done(null, this.#acceptCredentials(user, pass));
+      },
+    });
     const http = createServer();
     const wss = new WebSocketServer({ server: http });
     this.#broker = broker;
@@ -65,7 +91,14 @@ export class TestMqttBroker {
     broker.on("connectionError", forget);
     broker.on("clientReady", (client) => this.#subscriptions.delete(client.id));
 
-    wss.on("connection", (socket) => {
+    wss.on("connection", (socket, request) => {
+      const token = new URL(request.url ?? "/", "ws://localhost").searchParams.get("token");
+      this.#onConnect?.(token);
+      if (!this.#accept(token)) {
+        socket.close();
+        return;
+      }
+
       this.#sockets.add(socket);
       socket.on("close", () => this.#sockets.delete(socket));
       socket.on("error", () => this.#sockets.delete(socket));
