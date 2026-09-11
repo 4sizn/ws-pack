@@ -1,0 +1,6 @@
+[test]
+coveragePathIgnorePatterns = [
+  "test/**",
+  "e2e/**",
+  "src/demo/**",
+]
