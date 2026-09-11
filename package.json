@@ -23,7 +23,7 @@
   ],
   "type": "module",
   "engines": {
-    "node": ">=22"
+    "node": ">=18"
   },
   "sideEffects": [
     "./dist/lib/worker.js",

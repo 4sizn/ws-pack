@@ -16,43 +16,17 @@ test("기기 점검 페이지가 모든 조합을 통과한다", async ({ page }
   const expected = protocols.split(",").length * 3; // 프로토콜 × 모드(main·dedicated·shared)
   await expect(rows).toHaveCount(expected, { timeout: 45_000 });
 
-  const supports = await page.evaluate(() => ({
-    shared: typeof SharedWorker !== "undefined",
-    dedicated: typeof Worker !== "undefined",
-  }));
-
+  // 이 매트릭스(Chromium·Firefox·WebKit)는 셋 다 SharedWorker 를 가진다 — 실기기 iOS 26 점검도
+  // 같다(docs/worker.md). 그래서 여기서 강등은 성립하지 않고, 보이면 그건 회귀다.
+  // SharedWorker 가 없는 환경의 폴백은 test/unit/create-worker-client.test.ts 가 결정론적으로 본다.
   for (const protocol of protocols.split(",")) {
-    for (const requestedMode of ["main", "dedicated", "shared"] as const) {
+    for (const requested of ["main", "dedicated", "shared"] as const) {
       const row = page.locator(
-        `tbody tr[data-protocol="${protocol}"][data-requested-mode="${requestedMode}"]`,
+        `tbody tr[data-protocol="${protocol}"][data-requested-mode="${requested}"]`,
       );
 
-      const resolved = await row.getAttribute("data-resolved-mode");
-      const status = await row.getAttribute("class");
-      const detail = (await row.locator("td").nth(5).textContent())?.trim() ?? "";
-
-      if (requestedMode === "main") {
-        await expect(status).toBe("통과");
-        await expect(resolved).toBe("main");
-        continue;
-      }
-
-      if (!supports.shared && requestedMode === "shared") {
-        await expect(status).toBe("건너뜀");
-        await expect(resolved).toBe(supports.dedicated ? "dedicated" : "main");
-        await expect(detail.length).toBeGreaterThan(0);
-        await expect(detail).toContain("SharedWorker");
-        continue;
-      }
-
-      if (!supports.dedicated && requestedMode === "dedicated") {
-        await expect(status).toBe("건너뜀");
-        await expect(resolved).toBe("main");
-        await expect(detail).toContain("Worker");
-        continue;
-      }
-
-      await expect(status).toBe("통과");
+      await expect(row).toHaveAttribute("data-resolved-mode", requested);
+      await expect(row).toHaveClass("통과");
     }
   }
 
