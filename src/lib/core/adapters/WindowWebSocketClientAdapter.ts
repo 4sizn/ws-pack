@@ -1,11 +1,9 @@
-import { abortReason, onAbort } from "../abort";
+import { abortReason, onAbort, type Resolvable, resolveWithSignal, toError } from "../abort";
 import type { SocketCloseInfo } from "../CloseInfo";
 import { WindowWebsocketError } from "../errors/WindowWebsocketError";
 import type { AbstractPlugin, Logger } from "../plugins/AbstractPlugin";
 import type { ReconnectConfig } from "../Reconnect";
 import { WebSocketClientAdapter } from "./WebSocketClientAdapter";
-
-type Resolvable<T> = T | (() => T | Promise<T>);
 
 /** 브라우저 내장 `WebSocket` 생성자가 받는 인자 타입 (url, protocols) */
 type BrowserWebSocketArgs = ConstructorParameters<typeof WebSocket>;
@@ -96,10 +94,10 @@ export class WindowWebSocketClientAdapter extends WebSocketClientAdapter<
 
     let url: BrowserWebSocketArgs[0];
     try {
-      url = await this.#resolveSignal(this.#options.url, signal);
+      url = await resolveWithSignal(this.#options.url, signal);
     } catch (error) {
       if (!signal.aborted) {
-        for (const cb of this.#errorCallbacks) cb(this.#toError(error));
+        for (const cb of this.#errorCallbacks) cb(toError(error));
       }
       throw error;
     }
@@ -329,36 +327,5 @@ export class WindowWebSocketClientAdapter extends WebSocketClientAdapter<
   /** 브라우저 소켓의 readyState. 소켓이 없으면 CLOSED. */
   public networkStatus(): number {
     return this.client?.readyState ?? READY_STATE_CLOSED;
-  }
-
-  /** 값이 함수면 1회 호출해서 Promise 로 합쳐 반환한다. 취소되면 즉시 reject, 리스너는 정리한다. */
-  #resolveSignal<T>(value: Resolvable<T>, signal: AbortSignal): Promise<T> {
-    if (signal.aborted) {
-      return Promise.reject(abortReason(signal));
-    }
-    return new Promise<T>((resolve, reject) => {
-      const onAbortListener = () => reject(abortReason(signal));
-      signal.addEventListener("abort", onAbortListener, { once: true });
-      try {
-        const resolved = typeof value === "function" ? (value as () => T | Promise<T>)() : value;
-        Promise.resolve(resolved).then(
-          (result) => {
-            signal.removeEventListener("abort", onAbortListener);
-            resolve(result);
-          },
-          (error) => {
-            signal.removeEventListener("abort", onAbortListener);
-            reject(error);
-          },
-        );
-      } catch (error) {
-        signal.removeEventListener("abort", onAbortListener);
-        reject(error);
-      }
-    });
-  }
-
-  #toError(error: unknown): Error {
-    return error instanceof Error ? error : new Error(String(error));
   }
 }

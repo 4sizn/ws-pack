@@ -23,3 +23,38 @@ export function onAbort(signal: AbortSignal, callback: () => void): void {
 export function abortReason(signal: AbortSignal): Error {
   return signal.reason instanceof Error ? signal.reason : new Error("connect aborted");
 }
+
+/** 값이 함수면 1회 호출해서 Promise 로 합쳐 반환한다. 취소되면 즉시 reject, 리스너는 정리한다. */
+export function resolveWithSignal<T>(value: Resolvable<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) {
+    return Promise.reject(abortReason(signal));
+  }
+  return new Promise<T>((resolve, reject) => {
+    const onAbortListener = () => reject(abortReason(signal));
+    signal.addEventListener("abort", onAbortListener, { once: true });
+    try {
+      const resolved = typeof value === "function" ? (value as () => T | Promise<T>)() : value;
+      Promise.resolve(resolved).then(
+        (result) => {
+          signal.removeEventListener("abort", onAbortListener);
+          resolve(result);
+        },
+        (error) => {
+          signal.removeEventListener("abort", onAbortListener);
+          reject(toError(error));
+        },
+      );
+    } catch (error) {
+      signal.removeEventListener("abort", onAbortListener);
+      reject(toError(error));
+    }
+  });
+}
+
+/** Error 가 아닌 거부값을 Error 로 정규화한다. */
+export function toError(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error));
+}
+
+/** 함수 형태의 값을 받을 수 있는 타입. */
+export type Resolvable<T> = T | (() => T | Promise<T>);

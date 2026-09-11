@@ -8,7 +8,7 @@ import mqttPackage, {
   type MqttClient,
 } from "mqtt";
 import { Observable, type Subscriber } from "rxjs";
-import { abortReason, onAbort } from "../abort";
+import { abortReason, onAbort, type Resolvable, resolveWithSignal, toError } from "../abort";
 import type { SocketCloseInfo } from "../CloseInfo";
 import { MqttWebsocketError } from "../errors/MqttWebsocketError";
 import type { PubSubAble } from "../PubSubAble";
@@ -27,7 +27,6 @@ type ManagedClientOptionKeys =
   | "brokerURL"
   | "username"
   | "password";
-type Resolvable<T> = T | (() => T | Promise<T>);
 
 /**
  * MQTT 어댑터 옵션.
@@ -127,18 +126,20 @@ export class MqttWebSocketClientAdapter
     // 이전 시도가 남긴 연결을 먼저 놓는다 (연결 누수 방지).
     await this.disconnect();
 
-    let brokerURL: string | undefined;
-    let username: NonNullable<IClientOptions["username"]> | undefined;
-    let password: NonNullable<IClientOptions["password"]> | undefined;
-
-    if (!client) {
+    let instance: MqttClient;
+    if (client) {
+      instance = client;
+    } else {
+      let brokerURL: string;
+      let username: NonNullable<IClientOptions["username"]> | undefined;
+      let password: NonNullable<IClientOptions["password"]> | undefined;
       try {
-        const resolvedBrokerURL = this.#resolveSignal(this.#options.brokerURL, signal);
+        const resolvedBrokerURL = resolveWithSignal(this.#options.brokerURL, signal);
         const resolvedUsername = this.#options.username
-          ? this.#resolveSignal(this.#options.username, signal)
+          ? resolveWithSignal(this.#options.username, signal)
           : Promise.resolve(undefined);
         const resolvedPassword = this.#options.password
-          ? this.#resolveSignal(this.#options.password, signal)
+          ? resolveWithSignal(this.#options.password, signal)
           : Promise.resolve(undefined);
 
         [brokerURL, username, password] = await Promise.all([
@@ -148,10 +149,21 @@ export class MqttWebSocketClientAdapter
         ]);
       } catch (error) {
         if (!signal.aborted) {
-          for (const cb of this.#errorCallbacks) cb(this.#toError(error));
+          for (const cb of this.#errorCallbacks) cb(toError(error));
         }
         throw error;
       }
+
+      instance = mqttPackage.connect(brokerURL, {
+        // 브라우저용 라이브러리다. Node/Bun 에서도 같은 전송(네이티브 WebSocket)을 쓰게 해서
+        // 실행 환경마다 동작이 갈리지 않게 한다. 필요하면 사용자가 false 로 덮을 수 있다.
+        forceNativeWebSocket: true,
+        ...clientOptions,
+        ...(username === undefined ? {} : { username }),
+        ...(password === undefined ? {} : { password }),
+        // mqtt.js 자체 재연결 비활성화 — Controller 가 ReconnectConfig 로 재시도한다.
+        reconnectPeriod: 0,
+      });
     }
 
     return new Promise<void>((resolve, reject) => {
@@ -165,18 +177,6 @@ export class MqttWebSocketClientAdapter
       // 취소된 시도의 콜백은 흘리지 않는다. 판단 기준은 신호 하나뿐이다.
       const live = () => !signal.aborted;
 
-      const instance =
-        client ??
-        mqttPackage.connect(brokerURL as string, {
-          // 브라우저용 라이브러리다. Node/Bun 에서도 같은 전송(네이티브 WebSocket)을 쓰게 해서
-          // 실행 환경마다 동작이 갈리지 않게 한다. 필요하면 사용자가 false 로 덮을 수 있다.
-          forceNativeWebSocket: true,
-          ...clientOptions,
-          ...(username === undefined ? {} : { username }),
-          ...(password === undefined ? {} : { password }),
-          // mqtt.js 자체 재연결 비활성화 — Controller 가 ReconnectConfig 로 재시도한다.
-          reconnectPeriod: 0,
-        });
       this.client = instance;
 
       instance.on("connect", () => {
@@ -358,37 +358,6 @@ export class MqttWebSocketClientAdapter
   /** MQTT.js 는 readyState 를 노출하지 않는다. 연결 여부만 브라우저 readyState 값으로 옮겨 준다. */
   public networkStatus(): number {
     return this.client?.connected ? 1 : 3;
-  }
-
-  /** 값이 함수면 1회 호출해서 Promise 로 합쳐 반환한다. 취소되면 즉시 reject, 리스너는 정리한다. */
-  #resolveSignal<T>(value: Resolvable<T>, signal: AbortSignal): Promise<T> {
-    if (signal.aborted) {
-      return Promise.reject(abortReason(signal));
-    }
-    return new Promise<T>((resolve, reject) => {
-      const onAbortListener = () => reject(abortReason(signal));
-      signal.addEventListener("abort", onAbortListener, { once: true });
-      try {
-        const resolved = typeof value === "function" ? (value as () => T | Promise<T>)() : value;
-        Promise.resolve(resolved).then(
-          (result) => {
-            signal.removeEventListener("abort", onAbortListener);
-            resolve(result);
-          },
-          (error) => {
-            signal.removeEventListener("abort", onAbortListener);
-            reject(error);
-          },
-        );
-      } catch (error) {
-        signal.removeEventListener("abort", onAbortListener);
-        reject(error);
-      }
-    });
-  }
-
-  #toError(error: unknown): Error {
-    return error instanceof Error ? error : new Error(String(error));
   }
 }
 
