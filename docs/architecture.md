@@ -118,12 +118,12 @@ classDiagram
 
 ```mermaid
 flowchart TB
-  core["ws-pack<br/>코어 · WindowWebSocketClient"]
-  stomp["ws-pack/stomp<br/>@stomp/stompjs"]
-  mqtt["ws-pack/mqtt<br/>mqtt"]
-  worker["ws-pack/worker<br/>허브 · window"]
-  ws["ws-pack/worker/stomp"]
-  wm["ws-pack/worker/mqtt"]
+  core["ws-client-pack<br/>코어 · WindowWebSocketClient"]
+  stomp["ws-client-pack/stomp<br/>@stomp/stompjs"]
+  mqtt["ws-client-pack/mqtt<br/>mqtt"]
+  worker["ws-client-pack/worker<br/>허브 · window"]
+  ws["ws-client-pack/worker/stomp"]
+  wm["ws-client-pack/worker/mqtt"]
   reg[("프로토콜 등록소")]
 
   core --> reg

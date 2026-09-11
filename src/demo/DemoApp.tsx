@@ -9,7 +9,7 @@ import "./styles/chat.css";
 const me: ChatUser = { id: "me", name: "나", color: "#ffe066" };
 
 /** 3개 인스턴스를 한 방에 모을 때 쓰는 이름. */
-const SHARED_ROOM = "ws-pack.shared";
+const SHARED_ROOM = "ws-client-pack.shared";
 
 type Rooms = Record<string, string>;
 
@@ -60,7 +60,7 @@ export function DemoApp() {
   return (
     <main className="demo-page">
       <div className="demo-page__head">
-        <h1>ws-pack 데모</h1>
+        <h1>ws-client-pack 데모</h1>
         <p>
           방 3개가 각각 독립된 클라이언트 인스턴스를 쓴다. 한 방을 해제해도 나머지 방의 연결과
           구독은 유지된다.

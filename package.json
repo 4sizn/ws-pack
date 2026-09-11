@@ -1,17 +1,17 @@
 {
-  "name": "ws-pack",
+  "name": "ws-client-pack",
   "version": "0.1.0",
   "description": "WebSocket 클라이언트 패키지 — STOMP / 순수 WebSocket / MQTT 를 같은 표면으로, Worker·SharedWorker 위에서도.",
   "license": "MIT",
   "author": "heeseok shin",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/4sizn/ws-pack.git"
+    "url": "git+https://github.com/4sizn/ws-client-pack.git"
   },
   "bugs": {
-    "url": "https://github.com/4sizn/ws-pack/issues"
+    "url": "https://github.com/4sizn/ws-client-pack/issues"
   },
-  "homepage": "https://github.com/4sizn/ws-pack#readme",
+  "homepage": "https://github.com/4sizn/ws-client-pack#readme",
   "keywords": [
     "websocket",
     "stomp",

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The package is now published as `ws-client-pack`. Import paths change accordingly: `ws-client-pack`, `ws-client-pack/stomp`, `ws-client-pack/mqtt`, `ws-client-pack/worker`. Nothing was ever published under the old name, so no consumer has to migrate.
+
 ### Added
 
 - Dependabot now watches the package and the GitHub Actions workflows weekly, grouping development updates into one pull request. CI also cancels superseded runs on a pull request branch while leaving `main` runs alone, since those are what release decisions read.
@@ -32,7 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Documented the states in which `send()` throws and the recommended `connect$` flush pattern for app-level message queues. (#20)
 - Demo now queues pending messages and flushes them on `connect$`, matching the documented pattern.
-- Split the package into protocol-specific entry points: `ws-pack`, `ws-pack/stomp`, `ws-pack/mqtt`, and matching `/worker/*` paths. Protocol libraries are now optional peer dependencies. (#15)
+- Split the package into protocol-specific entry points: `ws-client-pack`, `ws-client-pack/stomp`, `ws-client-pack/mqtt`, and matching `/worker/*` paths. Protocol libraries are now optional peer dependencies. (#15)
 - The package is now publishable: MIT license, registry metadata, and a tarball limited to `dist`, `README.md`, and `LICENSE`. (#16)
 - The release workflow repeats CI checks on every `v*` tag and refuses to publish if the tag does not match `package.json`. (#16)
 

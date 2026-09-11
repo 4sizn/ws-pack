@@ -158,7 +158,7 @@ export const windowDriver: ChatDriver = {
       url: `${url}/?room=${encodeURIComponent(room)}`,
       reconnect,
       // 순수 WebSocket 은 프로토콜 ping 이 없다. 에코 서버가 그대로 돌려주므로 ping 이 곧 응답이다.
-      heartbeat: { intervalMs: 60_000, timeoutMs: 500, ping: "__ws-pack-ping__" },
+      heartbeat: { intervalMs: 60_000, timeoutMs: 500, ping: "__ws-client-pack-ping__" },
     });
 
     return {

@@ -44,7 +44,7 @@ let lastRoundTripAt = 0;
 function render(): void {
   const recovered = opened > 1;
   root.innerHTML = `
-    <h1>ws-pack 공유 워커 정리 점검</h1>
+    <h1>ws-client-pack 공유 워커 정리 점검</h1>
     <p>방: <code id="room">${room}</code> · 서버: <code>${host}</code></p>
     <p>살아 있음 신호(ping): <b>${pingIntervalMs === 0 ? "끔 — 크래시한 탭 흉내" : `${pingIntervalMs}ms`}</b> ·
        걷어내기: <b>${staleAfterMs}ms</b></p>

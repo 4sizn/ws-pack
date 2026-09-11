@@ -6,8 +6,8 @@ import type { MessageLike } from "./protocol";
  * 같은 스크립트를 가리킬 수 있어야 하기 때문이다.
  *
  * ```ts
- * new Worker(new URL("ws-pack/worker", import.meta.url), { type: "module" });
- * new SharedWorker(new URL("ws-pack/worker", import.meta.url), { type: "module" });
+ * new Worker(new URL("ws-client-pack/worker", import.meta.url), { type: "module" });
+ * new SharedWorker(new URL("ws-client-pack/worker", import.meta.url), { type: "module" });
  * ```
  *
  * 전용 Worker 는 전역 자신이 포트고, SharedWorker 는 connect 이벤트로 포트를 하나씩 받는다.
@@ -16,7 +16,7 @@ import type { MessageLike } from "./protocol";
 
 /**
  * 걷어내기 시간은 워커 스크립트 주소의 질의 문자열로 조절한다 —
- * `new SharedWorker(new URL("ws-pack/worker", import.meta.url) + "?staleAfterMs=120000")`.
+ * `new SharedWorker(new URL("ws-client-pack/worker", import.meta.url) + "?staleAfterMs=120000")`.
  * 워커 파일을 직접 쓰지 않는 소비자도 손댈 수 있어야 해서 이 자리에 둔다.
  */
 function hubOptions(): WorkerHubOptions {

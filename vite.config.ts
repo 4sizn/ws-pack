@@ -10,7 +10,7 @@ import { defineConfig, type Plugin } from "vite";
  */
 function deviceReports(): Plugin {
   return {
-    name: "ws-pack-device-reports",
+    name: "ws-client-pack-device-reports",
     configureServer(server) {
       server.middlewares.use("/device-report", (request, response) => {
         if (request.method !== "POST") {

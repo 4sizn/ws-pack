@@ -106,7 +106,7 @@ function build(
  * 워커 없이 메인 스레드가 직접 소유하는 클라이언트. 설정은 워커 경로와 같은 것을 쓴다.
  *
  * 구현은 등록소에서 가져온다 — 여기서 세 프로토콜을 직접 참조하면 워커를 안 쓰는 소비자까지
- * 모든 프로토콜 라이브러리를 받게 된다. 필요한 진입점(`ws-pack/stomp` 등)을 import 해 두면 된다.
+ * 모든 프로토콜 라이브러리를 받게 된다. 필요한 진입점(`ws-client-pack/stomp` 등)을 import 해 두면 된다.
  */
 function directClient(config: WorkerClientConfig): NetworkClient<unknown, never> {
   return createProtocolClient(config.protocol, config.options);

@@ -3,7 +3,7 @@ import type { NetworkClient } from "./NetworkClient";
 /**
  * 프로토콜 구현 등록소.
  *
- * 코어는 어떤 프로토콜이 있는지 모른다. `ws-pack/stomp` 처럼 프로토콜 진입점을 import 하면
+ * 코어는 어떤 프로토콜이 있는지 모른다. `ws-client-pack/stomp` 처럼 프로토콜 진입점을 import 하면
  * 그 모듈이 자기 자신을 여기 등록하고, 그때부터 워커 허브와 createWorkerClient 가 쓸 수 있다.
  *
  * 이렇게 나눈 이유는 번들이다. 코어가 세 프로토콜을 직접 참조하면 순수 WebSocket 만 쓰는
@@ -37,7 +37,7 @@ export function createProtocolClient(
   const factory = registry.get(name);
   if (!factory) {
     throw new Error(
-      `${name} 프로토콜이 등록되지 않았다. 진입점을 import 한다: import "ws-pack/${name}" (워커 안이라면 "ws-pack/worker/${name}")`,
+      `${name} 프로토콜이 등록되지 않았다. 진입점을 import 한다: import "ws-client-pack/${name}" (워커 안이라면 "ws-client-pack/worker/${name}")`,
     );
   }
   return factory(options as never);

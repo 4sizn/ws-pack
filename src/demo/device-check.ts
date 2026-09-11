@@ -49,7 +49,7 @@ function configFor(protocol: Protocol, room: string): WorkerClientConfig {
           brokerURL: `ws://${host}:15674/ws`,
           connectHeaders: { login: "test", passcode: "test" },
           reconnect,
-          revalidateDestination: "/topic/ws-pack.revalidate",
+          revalidateDestination: "/topic/ws-client-pack.revalidate",
         },
       };
     case "window":
@@ -59,7 +59,7 @@ function configFor(protocol: Protocol, room: string): WorkerClientConfig {
           url: `ws://${host}:8010/?room=${room}`,
           reconnect,
           // 에코 서버가 받은 것을 그대로 돌려주므로 ping 이 곧 응답이다.
-          heartbeat: { intervalMs: 15_000, timeoutMs: 3_000, ping: "__ws-pack-ping__" },
+          heartbeat: { intervalMs: 15_000, timeoutMs: 3_000, ping: "__ws-client-pack-ping__" },
         },
       };
     case "mqtt":
@@ -168,7 +168,7 @@ function render(): void {
     .join("");
 
   root.innerHTML = `
-    <h1>ws-pack 기기 점검</h1>
+    <h1>ws-client-pack 기기 점검</h1>
     <p>서버 호스트: <code>${host}</code></p>
     <p>이 기기가 지원하는 모드: <b>${modes.join(", ")}</b></p>
     <p>SharedWorker: <b>${typeof SharedWorker !== "undefined" ? "있음" : "없음"}</b> ·

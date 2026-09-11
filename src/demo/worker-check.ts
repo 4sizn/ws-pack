@@ -15,7 +15,7 @@ const log = (line: string) => {
 
 const worker = new SharedWorker(new URL("./demo-worker.ts", import.meta.url), {
   type: "module",
-  name: "ws-pack",
+  name: "ws-client-pack",
 });
 
 const client = new WorkerWebSocketClient(
